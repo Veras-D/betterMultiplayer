@@ -1,0 +1,63 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>netstandard2.1</TargetFramework>
+    <AssemblyTitle>betterMultiplayer</AssemblyTitle>
+    <Version>1.0.0</Version>
+    <Authors>Antigravity</Authors>
+    <Description>A standalone lightweight Hollow Knight Multiplayer mod built as a BepInEx plugin for Unity 6 compatibility.</Description>
+    <CopyLocalLockFileAssemblies>false</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+
+
+  <ItemGroup>
+    <!-- BepInEx and Harmony references -->
+    <Reference Include="BepInEx">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/BepInEx/core/BepInEx.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="0Harmony">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/BepInEx/core/0Harmony.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <!-- Core game references -->
+    <Reference Include="Assembly-CSharp">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/hollow_knight_Data/Managed/Assembly-CSharp.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="TeamCherry.TK2D">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/hollow_knight_Data/Managed/TeamCherry.TK2D.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/hollow_knight_Data/Managed/UnityEngine.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.CoreModule">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/hollow_knight_Data/Managed/UnityEngine.CoreModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.Physics2DModule">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/hollow_knight_Data/Managed/UnityEngine.Physics2DModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.IMGUIModule">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/hollow_knight_Data/Managed/UnityEngine.IMGUIModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.InputLegacyModule">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/hollow_knight_Data/Managed/UnityEngine.InputLegacyModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="UnityEngine.ImageConversionModule">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/hollow_knight_Data/Managed/UnityEngine.ImageConversionModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+
+    <Reference Include="PlayMaker">
+      <HintPath>/home/verivi/.steam/debian-installation/steamapps/common/Hollow Knight/hollow_knight_Data/Managed/PlayMaker.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+  </ItemGroup>
+</Project>
