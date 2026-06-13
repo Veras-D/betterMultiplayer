@@ -193,11 +193,14 @@ namespace BetterMultiplayer
                 }
             }
 
-            // Keep skins applied
-            SkinManager.UpdateSkins();
-
             // Poll for inventory/ability state changes
             ItemSync.Update();
+        }
+
+        void LateUpdate()
+        {
+            // Keep skins applied AFTER animations have completed for this frame
+            SkinManager.UpdateSkins();
         }
 
         private void SendPosition()
