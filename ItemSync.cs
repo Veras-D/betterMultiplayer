@@ -332,6 +332,54 @@ namespace BetterMultiplayer
             }
             BetterMultiplayer.Instance.Log("Item sync completed.");
         }
+
+        public static void ApplyPersistentBool(string sceneName, string id, bool activated, bool semiPersistent)
+        {
+            try
+            {
+                if (SceneData.instance == null) return;
+
+                isSyncing = true;
+                
+                // Find or create the persistent state in global storage
+                PersistentBoolData data = SceneData.instance.persistentBoolItems.Find(x => x.id == id && x.sceneName == sceneName);
+                if (data == null)
+                {
+                    data = new PersistentBoolData { id = id, sceneName = sceneName };
+                    SceneData.instance.persistentBoolItems.Add(data);
+                }
+                data.activated = activated;
+                data.semiPersistent = semiPersistent;
+
+                BetterMultiplayer.Instance.Log($"[PersistentBool] Received activation for {id} in {sceneName}");
+
+                // If players are in the same scene, instantly update the visual object (pull lever, break wall, open chest)
+                if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == sceneName)
+                {
+                    foreach (var item in UnityEngine.Object.FindObjectsOfType<PersistentBoolItem>())
+                    {
+                        if (item != null && item.GetId() == id)
+                        {
+                            if (item.persistentBoolData != null)
+                            {
+                                item.persistentBoolData.activated = activated;
+                            }
+                            item.SaveState();
+                            item.PreSetup();
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError($"Error applying persistent bool: " + ex);
+            }
+            finally
+            {
+                isSyncing = false;
+            }
+        }
     }
 
     [HarmonyPatch(typeof(PlayerData), nameof(PlayerData.SetBool))]
@@ -349,6 +397,19 @@ namespace BetterMultiplayer
         public static void Postfix(PlayerData __instance, string intName, int value)
         {
             ItemSync.OnSetPlayerInt(intName, value);
+        }
+    }
+
+    [HarmonyPatch(typeof(SceneData), "SaveMyState", new Type[] { typeof(PersistentBoolData) })]
+    public static class SceneData_SaveMyState_Patch
+    {
+        public static void Postfix(PersistentBoolData data)
+        {
+            if (data != null && data.activated && !ItemSync.isSyncing)
+            {
+                BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {data.id} in {data.sceneName}");
+                NetworkManager.SendPacket($"PERSIST_BOOL|{data.sceneName}|{data.id}|{data.activated}|{data.semiPersistent}");
+            }
         }
     }
 }
