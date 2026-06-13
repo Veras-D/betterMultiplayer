@@ -122,6 +122,7 @@ namespace BetterMultiplayer
         private string highlightedDesc = "";
 
         private tk2dSpriteAnimator localAnimatorCache;
+        private bool wasControlRelinquished = false;
 
         private void HighlightSkin(string skinName)
         {
@@ -156,6 +157,14 @@ namespace BetterMultiplayer
         void OnDestroy()
         {
             UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnMenuSceneLoaded;
+            if (wasControlRelinquished && HeroController.instance != null)
+            {
+                try
+                {
+                    HeroController.instance.RegainControl();
+                }
+                catch {}
+            }
         }
 
         private void OnMenuSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
@@ -205,29 +214,34 @@ namespace BetterMultiplayer
 
         void Update()
         {
+            bool guiHasKeyboard = GUIUtility.keyboardControl != 0;
+
             // Keyboard toggle fallback (using both legacy Input and InControl for cross-platform robustness)
             bool togglePressed = false;
-            try
+            if (!guiHasKeyboard)
             {
-                if (BetterMultiplayer.MenuToggleKeySetting != null)
+                try
                 {
-                    togglePressed = Input.GetKeyDown(BetterMultiplayer.MenuToggleKeySetting.Value);
+                    if (BetterMultiplayer.MenuToggleKeySetting != null)
+                    {
+                        togglePressed = Input.GetKeyDown(BetterMultiplayer.MenuToggleKeySetting.Value);
+                    }
+                    else
+                    {
+                        togglePressed = Input.GetKeyDown(KeyCode.F10);
+                    }
                 }
-                else
-                {
-                    togglePressed = Input.GetKeyDown(KeyCode.F10);
-                }
-            }
-            catch {}
+                catch {}
 
-            try
-            {
-                if (CheckInControlToggleKeyPressed())
+                try
                 {
-                    togglePressed = true;
+                    if (CheckInControlToggleKeyPressed())
+                    {
+                        togglePressed = true;
+                    }
                 }
+                catch {}
             }
-            catch {}
 
             if (togglePressed)
             {
@@ -266,6 +280,39 @@ namespace BetterMultiplayer
             {
                 bumperPressTimer = 0f;
                 bumperToggled = false;
+            }
+
+            // Manage input and cursor state when menu is open
+            if (showMenu)
+            {
+                Cursor.visible = true;
+                Cursor.lockState = CursorLockMode.None;
+                if (HeroController.instance != null && !wasControlRelinquished)
+                {
+                    try
+                    {
+                        HeroController.instance.RelinquishControl();
+                        wasControlRelinquished = true;
+                    }
+                    catch {}
+                }
+            }
+            else
+            {
+                if (wasControlRelinquished)
+                {
+                    Cursor.visible = false;
+                    Cursor.lockState = CursorLockMode.Locked;
+                    if (HeroController.instance != null)
+                    {
+                        try
+                        {
+                            HeroController.instance.RegainControl();
+                            wasControlRelinquished = false;
+                        }
+                        catch {}
+                    }
+                }
             }
 
             // Periodically send position if connected
@@ -375,18 +422,19 @@ namespace BetterMultiplayer
             {
                 GUI.FocusWindow(10985);
                 GUI.BringWindowToFront(10985);
+                GUI.FocusControl("IPField");
+            }
+
+            // Refocus and bring to front if clicked inside window bounds (from OnGUI)
+            if (Event.current != null && Event.current.type == EventType.MouseDown && menuWindowRect.Contains(Event.current.mousePosition))
+            {
+                GUI.FocusWindow(10985);
+                GUI.BringWindowToFront(10985);
             }
         }
 
         void DrawMenuWindow(int windowID)
         {
-            // If the window is clicked, bring it to front and focus to prevent focus loss
-            if (Event.current != null && Event.current.type == EventType.MouseDown)
-            {
-                GUI.FocusWindow(10985);
-                GUI.BringWindowToFront(10985);
-            }
-
             int boxWidth = showSkinsMenu ? 500 : 260;
             int boxHeight = showSkinsMenu ? 340 : 220;
 

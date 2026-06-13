@@ -102,22 +102,35 @@ After reviewing the initial implementation with community feedback, the followin
 * **Issue**: Unconditionally calling `GUI.FocusWindow(id)` on every `OnGUI` frame prevents the window from ever losing focus dynamically (such as when interacting with overlapping game UI).
 * **Refinement**: 
   * Focus is locked by calling `GUI.FocusWindow(10985)` and `GUI.BringWindowToFront(10985)` **only on the frame the menu is toggled open** (transition frame).
-  * To handle focus-loss recovery gracefully, mouse click event detection hooks into the window context via `DrawMenuWindow`. Clicking inside the window background triggers focus and ordering recovery:
+  * On open, it also focuses the text input field immediately by calling `GUI.FocusControl("IPField")`.
+  * **Event Callback Focus**: In Unity IMGUI, calling `FocusWindow` inside a window's draw callback is ignored. To allow clicking the window to regain focus, the `MouseDown` check is executed inside `OnGUI` itself (checking if the mouse click resides within `menuWindowRect` bounds):
     ```csharp
-    if (Event.current != null && Event.current.type == EventType.MouseDown)
+    if (Event.current != null && Event.current.type == EventType.MouseDown && menuWindowRect.Contains(Event.current.mousePosition))
     {
         GUI.FocusWindow(10985);
         GUI.BringWindowToFront(10985);
     }
     ```
 
-### Refinement 2: Configurable & Rebindable Toggle Key
+### Refinement 2: Keyboard Toggle Conflict Resolution
+* **Issue**: If the menu is open and the user is typing, they do not want the menu to close if they type the toggle key. Also, low-level keyboard polling can drain native event queues.
+* **Refinement**:
+  * In `Update()`, keyboard checking is gated behind `GUIUtility.keyboardControl == 0` (meaning no active text control holds focus).
+  * This guarantees that when a user is actively typing in the IP text field, the keyboard toggle is bypassed, allowing the key inputs to go directly to the input field without triggering menu toggles.
+
+### Refinement 3: Cursor Visibility & Player Control Locking
+* **Issue**: Under Proton/Wine, the game's input handle locks the cursor and registers movement commands even when the mod menu overlay is open, causing the Knight to move while typing.
+* **Refinement**:
+  * Added dynamic cursor state management in `Update()`: when `showMenu` is active, the cursor is unlocked and made visible (`Cursor.visible = true; Cursor.lockState = CursorLockMode.None`).
+  * Relinquished player controls via Hollow Knight's built-in `HeroController.instance.RelinquishControl()` on menu open, and restored control via `RegainControl()` on close, keeping the player character stationary during configuration.
+
+### Refinement 4: Configurable & Rebindable Toggle Key
 * **Issue**: Desktop environment shortcuts are system-wide and highly customized. Hardcoding `F10` risks constant collision.
 * **Refinement**:
   * Bound a BepInEx config entry `MenuToggleKeySetting` (defaulting to `KeyCode.F10`), allowing users to configure their own custom shortcut inside the mod's configuration file (`Settings/MenuToggleKey`).
   * Mapped the configured key to `InControl.Key` dynamically inside the InControl input check.
 
-### Refinement 3: Documented Known Controller Mapping Quirks
+### Refinement 5: Documented Known Controller Mapping Quirks
 * **Steam Input**: If Steam Input is active, the controller maps as a virtual Xbox controller. Players with custom Steam Input configurations may experience virtual bumper bindings which translate transparently, but direct mapping profiles might differ if Steam Input is disabled. A note has been added to check Steam Input configuration if bindings don't align.
 
 
