@@ -162,20 +162,42 @@ namespace BetterMultiplayer
 
         private bool wasF10PressedLastFrame = false;
 
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private bool CheckInControlF10Pressed()
+        {
+            var provider = InputManager.KeyboardProvider;
+            if (provider == null) return false;
+
+            bool f10Down = provider.GetKeyIsPressed(Key.F10);
+            bool pressed = f10Down && !wasF10PressedLastFrame;
+            wasF10PressedLastFrame = f10Down;
+            return pressed;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        private bool CheckInControlBumpersPressed()
+        {
+            var device = InputManager.ActiveDevice;
+            if (device == null) return false;
+
+            return device.LeftBumper.IsPressed && device.RightBumper.IsPressed;
+        }
+
         void Update()
         {
             // Keyboard toggle fallback (using both legacy Input and InControl for cross-platform robustness)
-            bool f10Pressed = Input.GetKeyDown(KeyCode.F10);
+            bool f10Pressed = false;
             try
             {
-                if (InputManager.KeyboardProvider != null)
+                f10Pressed = Input.GetKeyDown(KeyCode.F10);
+            }
+            catch {}
+
+            try
+            {
+                if (CheckInControlF10Pressed())
                 {
-                    bool f10Down = InputManager.KeyboardProvider.GetKeyIsPressed(Key.F10);
-                    if (f10Down && !wasF10PressedLastFrame)
-                    {
-                        f10Pressed = true;
-                    }
-                    wasF10PressedLastFrame = f10Down;
+                    f10Pressed = true;
                 }
             }
             catch {}
@@ -189,17 +211,17 @@ namespace BetterMultiplayer
             bool bumpersPressed = false;
             try
             {
-                var device = InputManager.ActiveDevice;
-                if (device != null)
-                {
-                    bumpersPressed = device.LeftBumper.IsPressed && device.RightBumper.IsPressed;
-                }
+                bumpersPressed = CheckInControlBumpersPressed();
             }
             catch {}
+
             if (!bumpersPressed)
             {
-                // Fallback to legacy joystick buttons 4 and 5
-                bumpersPressed = Input.GetKey(KeyCode.JoystickButton4) && Input.GetKey(KeyCode.JoystickButton5);
+                try
+                {
+                    bumpersPressed = Input.GetKey(KeyCode.JoystickButton4) && Input.GetKey(KeyCode.JoystickButton5);
+                }
+                catch {}
             }
 
             if (bumpersPressed)
