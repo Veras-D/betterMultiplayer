@@ -93,8 +93,131 @@ namespace BetterMultiplayer
             {
                 if (animator.CurrentClip == null || animator.CurrentClip.name != animName)
                 {
+                    string oldClip = animator.CurrentClip != null ? animator.CurrentClip.name : "";
                     animator.Play(animName);
+                    OnAnimationChanged(oldClip, animName);
                 }
+            }
+        }
+
+        private static GameObject GetHeroField(string fieldName)
+        {
+            if (HeroController.instance == null) return null;
+            try
+            {
+                var field = typeof(HeroController).GetField(fieldName, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+                return field?.GetValue(HeroController.instance) as GameObject;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private void OnAnimationChanged(string oldClip, string newClip)
+        {
+            try
+            {
+                if (HeroController.instance == null) return;
+
+                if (newClip.StartsWith("attack") || newClip.Contains("slash"))
+                {
+                    GameObject prefab = null;
+                    if (newClip.Contains("up"))
+                    {
+                        prefab = GetHeroField("upSlashPrefab");
+                    }
+                    else if (newClip.Contains("down"))
+                    {
+                        prefab = GetHeroField("downSlashPrefab");
+                    }
+                    else
+                    {
+                        prefab = GetHeroField("slashPrefab");
+                    }
+
+                    if (prefab != null)
+                    {
+                        GameObject slash = Instantiate(prefab, transform.position, transform.rotation);
+                        slash.transform.localScale = transform.localScale;
+                        SanitizeEffect(slash);
+                        Destroy(slash, 0.3f);
+                    }
+                }
+                else if (newClip == "dash")
+                {
+                    GameObject prefab = GetHeroField("dashParticlesPrefab");
+                    if (prefab != null)
+                    {
+                        GameObject dash = Instantiate(prefab, transform.position, transform.rotation);
+                        dash.transform.localScale = transform.localScale;
+                        SanitizeEffect(dash);
+                        Destroy(dash, 0.5f);
+                    }
+                }
+                else if (newClip.Contains("double_jump") || newClip.Contains("d_jump"))
+                {
+                    GameObject prefab = GetHeroField("dJumpWingsPrefab");
+                    if (prefab != null)
+                    {
+                        GameObject wings = Instantiate(prefab, transform.position, transform.rotation);
+                        wings.transform.localScale = transform.localScale;
+                        SanitizeEffect(wings);
+                        Destroy(wings, 0.6f);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in RemotePlayerPuppet.OnAnimationChanged: " + ex);
+            }
+        }
+
+        private void SanitizeEffect(GameObject effectObj)
+        {
+            if (effectObj == null) return;
+            try
+            {
+                // Set layer to Ignore Raycast to prevent any physics interactions
+                effectObj.layer = 2;
+
+                foreach (var col in effectObj.GetComponentsInChildren<Collider2D>(true))
+                {
+                    Destroy(col);
+                }
+
+                // Strip FSMs and other game-logic scripts so it's strictly visual
+                foreach (var comp in effectObj.GetComponentsInChildren<Component>(true))
+                {
+                    if (comp == null) continue;
+                    
+                    if (comp is PlayMakerFSM)
+                    {
+                        Destroy(comp);
+                    }
+                    else
+                    {
+                        string typeName = comp.GetType().FullName;
+                        if (typeName != null && 
+                            !typeName.StartsWith("UnityEngine.Mesh") && 
+                            !typeName.StartsWith("UnityEngine.Transform") && 
+                            !typeName.StartsWith("UnityEngine.ParticleSystem") && 
+                            !typeName.StartsWith("UnityEngine.Sprite") && 
+                            !typeName.StartsWith("UnityEngine.Renderer") && 
+                            !typeName.StartsWith("UnityEngine.Filter") &&
+                            !typeName.StartsWith("tk2d"))
+                        {
+                            if (!(comp is Transform) && !(comp is Renderer) && !(comp is MeshFilter) && comp.GetType().Name != "ParticleSystem")
+                            {
+                                Destroy(comp);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error sanitizing effect: " + ex);
             }
         }
     }
