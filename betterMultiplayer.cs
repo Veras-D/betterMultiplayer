@@ -4,6 +4,8 @@ using HarmonyLib;
 using System;
 using System.Globalization;
 using UnityEngine;
+using InControl;
+
 
 namespace BetterMultiplayer
 {
@@ -158,16 +160,48 @@ namespace BetterMultiplayer
             }
         }
 
+        private bool wasF10PressedLastFrame = false;
+
         void Update()
         {
-            // Keyboard toggle fallback
-            if (Input.GetKeyDown(KeyCode.F10))
+            // Keyboard toggle fallback (using both legacy Input and InControl for cross-platform robustness)
+            bool f10Pressed = Input.GetKeyDown(KeyCode.F10);
+            try
+            {
+                if (InputManager.KeyboardProvider != null)
+                {
+                    bool f10Down = InputManager.KeyboardProvider.GetKeyIsPressed(Key.F10);
+                    if (f10Down && !wasF10PressedLastFrame)
+                    {
+                        f10Pressed = true;
+                    }
+                    wasF10PressedLastFrame = f10Down;
+                }
+            }
+            catch {}
+
+            if (f10Pressed)
             {
                 showMenu = !showMenu;
             }
 
-            // Controller toggle: Hold LB + RB (joystick buttons 4 and 5) for 1 second
-            bool bumpersPressed = Input.GetKey(KeyCode.JoystickButton4) && Input.GetKey(KeyCode.JoystickButton5);
+            // Controller toggle: Hold LB + RB (joystick bumpers) for 1 second
+            bool bumpersPressed = false;
+            try
+            {
+                var device = InputManager.ActiveDevice;
+                if (device != null)
+                {
+                    bumpersPressed = device.LeftBumper.IsPressed && device.RightBumper.IsPressed;
+                }
+            }
+            catch {}
+            if (!bumpersPressed)
+            {
+                // Fallback to legacy joystick buttons 4 and 5
+                bumpersPressed = Input.GetKey(KeyCode.JoystickButton4) && Input.GetKey(KeyCode.JoystickButton5);
+            }
+
             if (bumpersPressed)
             {
                 bumperPressTimer += Time.unscaledDeltaTime;
@@ -250,32 +284,48 @@ namespace BetterMultiplayer
             }
         }
 
+        private Rect menuWindowRect = new Rect(10, 10, 260, 220);
+
         void OnGUI()
         {
             if (!showMenu) return;
 
             int boxWidth = showSkinsMenu ? 500 : 260;
             int boxHeight = showSkinsMenu ? 340 : 220;
-            GUI.Box(new Rect(10, 10, boxWidth, boxHeight), "betterMultiplayer (F10 / Hold LB+RB)");
+            menuWindowRect.width = boxWidth;
+            menuWindowRect.height = boxHeight;
+
+            // Use GUIStyle.none to keep the exact original look and position (static at 10, 10)
+            menuWindowRect = GUI.Window(10985, menuWindowRect, DrawMenuWindow, "", GUIStyle.none);
+
+            // Focus the window to route keyboard input correctly
+            GUI.FocusWindow(10985);
+        }
+
+        void DrawMenuWindow(int windowID)
+        {
+            int boxWidth = showSkinsMenu ? 500 : 260;
+            int boxHeight = showSkinsMenu ? 340 : 220;
+            GUI.Box(new Rect(0, 0, boxWidth, boxHeight), "betterMultiplayer (F10 / Hold LB+RB)");
 
             if (showSkinsMenu)
             {
-                GUI.Label(new Rect(20, 40, 220, 25), "Select Active Skin:");
+                GUI.Label(new Rect(10, 30, 220, 25), "Select Active Skin:");
                 
-                int scrollY = 70;
+                int scrollY = 60;
                 int scrollHeight = 210;
                 if (!string.IsNullOrEmpty(skinWarning))
                 {
                     GUI.color = Color.red;
-                    GUI.Label(new Rect(20, 65, 220, 25), skinWarning);
+                    GUI.Label(new Rect(10, 55, 220, 25), skinWarning);
                     GUI.color = Color.white;
-                    scrollY = 90;
+                    scrollY = 80;
                     scrollHeight = 190;
                 }
                 
                 var skins = SkinManager.GetAvailableSkins();
                 skinsScrollPosition = GUI.BeginScrollView(
-                    new Rect(20, scrollY, 220, scrollHeight), 
+                    new Rect(10, scrollY, 220, scrollHeight), 
                     skinsScrollPosition, 
                     new Rect(0, 0, 200, skins.Count * 35)
                 );
@@ -316,59 +366,60 @@ namespace BetterMultiplayer
                 GUI.EndScrollView();
 
                 // Draw Preview on the right side
-                GUI.Box(new Rect(260, 40, 220, 240), "Skin Preview");
+                GUI.Box(new Rect(250, 30, 220, 240), "Skin Preview");
                 if (highlightedPreview != null)
                 {
-                    GUI.DrawTexture(new Rect(270, 70, 200, 130), highlightedPreview, ScaleMode.ScaleToFit);
+                    GUI.DrawTexture(new Rect(260, 60, 200, 130), highlightedPreview, ScaleMode.ScaleToFit);
                 }
                 else
                 {
-                    GUI.Label(new Rect(270, 120, 200, 30), "No Preview Available");
+                    GUI.Label(new Rect(260, 110, 200, 30), "No Preview Available");
                 }
 
                 // Draw Metadata
-                GUI.Label(new Rect(270, 210, 200, 20), "Author: " + highlightedAuthor);
-                GUI.Label(new Rect(270, 230, 200, 45), "Description: " + highlightedDesc);
+                GUI.Label(new Rect(260, 200, 200, 20), "Author: " + highlightedAuthor);
+                GUI.Label(new Rect(260, 220, 200, 45), "Description: " + highlightedDesc);
             }
             else if (NetworkManager.IsClientConnected)
             {
-                GUI.Label(new Rect(20, 40, 220, 25), "Status: " + (NetworkManager.IsServer ? "Hosting (Connected)" : "Connected to Host"));
-                GUI.Label(new Rect(20, 65, 220, 25), "Partner Location: " + NetworkManager.RemoteSceneName);
-                if (GUI.Button(new Rect(20, 95, 220, 30), "Sync My Items to Partner"))
+                GUI.Label(new Rect(10, 30, 220, 25), "Status: " + (NetworkManager.IsServer ? "Hosting (Connected)" : "Connected to Host"));
+                GUI.Label(new Rect(10, 55, 220, 25), "Partner Location: " + NetworkManager.RemoteSceneName);
+                if (GUI.Button(new Rect(10, 85, 220, 30), "Sync My Items to Partner"))
                 {
                     ItemSync.SendAllItems();
                 }
-                if (GUI.Button(new Rect(20, 135, 220, 30), "Disconnect"))
+                if (GUI.Button(new Rect(10, 125, 220, 30), "Disconnect"))
                 {
                     NetworkManager.Stop();
                 }
             }
             else if (NetworkManager.IsServer)
             {
-                GUI.Label(new Rect(20, 40, 220, 30), "Status: Hosting (Waiting...)");
-                if (GUI.Button(new Rect(20, 80, 220, 30), "Stop Server"))
+                GUI.Label(new Rect(10, 30, 220, 30), "Status: Hosting (Waiting...)");
+                if (GUI.Button(new Rect(10, 70, 220, 30), "Stop Server"))
                 {
                     NetworkManager.Stop();
                 }
             }
             else
             {
-                if (GUI.Button(new Rect(20, 40, 105, 30), "Host Server"))
+                if (GUI.Button(new Rect(10, 30, 105, 30), "Host Server"))
                 {
                     NetworkManager.StartServer(10985);
                 }
 
-                GUI.Label(new Rect(20, 80, 60, 30), "Host IP:");
-                ipAddress = GUI.TextField(new Rect(80, 80, 160, 30), ipAddress);
+                GUI.Label(new Rect(10, 70, 60, 30), "Host IP:");
+                GUI.SetNextControlName("IPField");
+                ipAddress = GUI.TextField(new Rect(70, 70, 160, 30), ipAddress);
 
-                if (GUI.Button(new Rect(20, 120, 220, 30), "Connect to Host"))
+                if (GUI.Button(new Rect(10, 110, 220, 30), "Connect to Host"))
                 {
                     NetworkManager.Connect(ipAddress, 10985);
                 }
             }
 
             // Select Skin button at the bottom of the menu
-            if (GUI.Button(new Rect(showSkinsMenu ? 140 : 20, boxHeight - 45, 220, 30), showSkinsMenu ? "Back to Main Menu" : "Select Skin..."))
+            if (GUI.Button(new Rect(showSkinsMenu ? 130 : 10, boxHeight - 55, 220, 30), showSkinsMenu ? "Back to Main Menu" : "Select Skin..."))
             {
                 if (showSkinsMenu)
                 {
