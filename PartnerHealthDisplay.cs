@@ -40,9 +40,9 @@ namespace BetterMultiplayer
 
             if (partnerHealthbar != null)
             {
-                // Ensure it stays active and positioned above main healthbar
-                partnerHealthbar.transform.localPosition = new Vector3(0.5f, 1.1f, -0.05f);
-                partnerHealthbar.transform.localScale = new Vector3(0.65f, 0.65f, 1f);
+                // Position it above the player's own health bar, and scale it down slightly
+                partnerHealthbar.transform.localPosition = mainHealthbar.transform.localPosition + new Vector3(0f, 1.1f, -0.05f);
+                partnerHealthbar.transform.localScale = mainHealthbar.transform.localScale * 0.65f;
 
                 int totalMasksNeeded = targetMaxHealth + targetHealthBlue;
                 if (maskClones.Count != totalMasksNeeded || targetMaxHealth != lastMaxHealth || targetHealthBlue != lastHealthBlue)
@@ -87,13 +87,13 @@ namespace BetterMultiplayer
             {
                 BetterMultiplayer.Instance.Log("Creating PartnerHealthbar...");
                 partnerHealthbar = new GameObject("PartnerHealthbar");
-                // Parent directly to mainHealthbar so it inherits position, scale, active states, and lifecycle
-                partnerHealthbar.transform.SetParent(mainHealthbar.transform, false);
+                // Parent to mainHealthbar's parent (Playmaker HUD) as a sibling to avoid breaking the Healthbar FSM layout
+                partnerHealthbar.transform.SetParent(mainHealthbar.transform.parent, false);
                 partnerHealthbar.layer = mainHealthbar.layer;
                 
                 // Position it above the player's own health bar, and scale it down slightly
-                partnerHealthbar.transform.localPosition = new Vector3(0.5f, 1.1f, -0.05f);
-                partnerHealthbar.transform.localScale = new Vector3(0.65f, 0.65f, 1f);
+                partnerHealthbar.transform.localPosition = mainHealthbar.transform.localPosition + new Vector3(0f, 1.1f, -0.05f);
+                partnerHealthbar.transform.localScale = mainHealthbar.transform.localScale * 0.65f;
             }
             catch (Exception ex)
             {
