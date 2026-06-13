@@ -35,9 +35,11 @@ jobs:
         cp default_preview.png publish/BepInEx/plugins/betterMultiplayer/
         # Copy Skins folder
         cp -r Skins publish/BepInEx/plugins/betterMultiplayer/
-        # Compress the structure
+        # Copy BepInEx root loaders
+        cp winhttp.dll doorstop_config.ini publish/
+        # Compress the structure including root files
         cd publish
-        zip -r ../HollowKnight_MultiplayerMod.zip BepInEx
+        zip -r ../HollowKnight_MultiplayerMod.zip BepInEx winhttp.dll doorstop_config.ini
 
     - name: Create Release and Upload Artifact
       uses: ncipollo/release-action@v1
