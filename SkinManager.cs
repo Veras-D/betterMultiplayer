@@ -517,7 +517,7 @@ namespace BetterMultiplayer
         {
             if (LocalHUDTexture == null && LocalOrbFullTexture == null) return;
  
-            GameObject hudCanvas = GameObject.Find("Hud Camera/Hud Canvas");
+            GameObject hudCanvas = GameObject.Find("Hud Canvas");
             if (hudCanvas != null)
             {
                 ReskinHUDRecursive(hudCanvas.transform);
@@ -929,6 +929,30 @@ namespace BetterMultiplayer
 
     [HarmonyPatch(typeof(tk2dBaseSprite), nameof(tk2dBaseSprite.SetSprite), new Type[] { typeof(int) })]
     public static class tk2dBaseSprite_SetSprite_Patch
+    {
+        public static void Postfix(tk2dBaseSprite __instance)
+        {
+            if (__instance is tk2dSprite sprite)
+            {
+                tk2dSprite_Awake_Patch.Postfix(sprite);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(tk2dBaseSprite), nameof(tk2dBaseSprite.SetSprite), new Type[] { typeof(tk2dSpriteCollectionData), typeof(int) })]
+    public static class tk2dBaseSprite_SetSpriteCollection_Patch
+    {
+        public static void Postfix(tk2dBaseSprite __instance)
+        {
+            if (__instance is tk2dSprite sprite)
+            {
+                tk2dSprite_Awake_Patch.Postfix(sprite);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(tk2dBaseSprite), nameof(tk2dBaseSprite.spriteId), MethodType.Setter)]
+    public static class tk2dBaseSprite_SpriteId_Patch
     {
         public static void Postfix(tk2dBaseSprite __instance)
         {

@@ -75,6 +75,24 @@ namespace BetterMultiplayer
                     puppetCloak.layer = 2;
                 }
 
+                // Create Focus Effects child to support visual healing/focus animations
+                Transform localFocus = HeroController.instance.transform.Find("Focus Effects");
+                if (localFocus != null)
+                {
+                    GameObject puppetFocus = Instantiate(localFocus.gameObject, puppet.transform);
+                    puppetFocus.name = "Focus Effects";
+                    puppetFocus.transform.localPosition = localFocus.localPosition;
+                    puppetFocus.transform.localRotation = localFocus.localRotation;
+                    puppetFocus.transform.localScale = localFocus.localScale;
+                    puppetFocus.layer = 2;
+                    
+                    // Disable all PlayMakerFSMs on it to prevent local player health bugs
+                    foreach (var fsm in puppetFocus.GetComponentsInChildren<PlayMakerFSM>(true))
+                    {
+                        fsm.enabled = false;
+                    }
+                }
+
                 // Attach our remote puppet controller
                 var puppetCtrl = puppet.AddComponent<RemotePlayerPuppet>();
                 puppetCtrl.username = name;
@@ -189,6 +207,26 @@ namespace BetterMultiplayer
             try
             {
                 if (HeroController.instance == null) return;
+
+                // Trigger/stop focus effects
+                var focusEffects = transform.Find("Focus Effects");
+                if (focusEffects != null)
+                {
+                    if (newClip.Contains("focus") || newClip.Contains("heal"))
+                    {
+                        foreach (var ps in focusEffects.GetComponentsInChildren<ParticleSystem>(true))
+                        {
+                            ps.Play();
+                        }
+                    }
+                    else if (oldClip.Contains("focus") || oldClip.Contains("heal"))
+                    {
+                        foreach (var ps in focusEffects.GetComponentsInChildren<ParticleSystem>(true))
+                        {
+                            ps.Stop();
+                        }
+                    }
+                }
 
                 if (newClip.StartsWith("attack") || newClip.Contains("slash"))
                 {

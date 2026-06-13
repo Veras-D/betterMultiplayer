@@ -110,7 +110,7 @@ namespace BetterMultiplayer
                 GameObject templateMask = null;
                 foreach (Transform child in mainHealthbar.transform)
                 {
-                    if (child.name.Contains("Health Unit"))
+                    if (child.name.IndexOf("health_unit", StringComparison.OrdinalIgnoreCase) >= 0)
                     {
                         templateMask = child.gameObject;
                         break;
@@ -124,7 +124,7 @@ namespace BetterMultiplayer
                 List<Transform> units = new List<Transform>();
                 foreach (Transform t in mainHealthbar.transform)
                 {
-                    if (t.name.Contains("Health Unit")) units.Add(t);
+                    if (t.name.IndexOf("health_unit", StringComparison.OrdinalIgnoreCase) >= 0) units.Add(t);
                 }
                 if (units.Count > 1)
                 {

@@ -52,6 +52,10 @@
       <HintPath>lib/UnityEngine.ImageConversionModule.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="UnityEngine.ParticleSystemModule">
+      <HintPath>lib/UnityEngine.ParticleSystemModule.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="PlayMaker">
       <HintPath>lib/PlayMaker.dll</HintPath>
       <Private>false</Private>
