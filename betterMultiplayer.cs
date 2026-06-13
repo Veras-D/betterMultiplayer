@@ -180,6 +180,9 @@ namespace BetterMultiplayer
 
             // Keep skins applied
             SkinManager.UpdateSkins();
+
+            // Poll for inventory/ability state changes
+            ItemSync.Update();
         }
 
         private void SendPosition()

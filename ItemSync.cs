@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using HarmonyLib;
 
 namespace BetterMultiplayer
@@ -7,19 +8,28 @@ namespace BetterMultiplayer
     public static class ItemSync
     {
         public static bool isSyncing = false;
+        private static readonly Dictionary<string, string> localStateCache = new Dictionary<string, string>();
+        private static float lastPollTime = 0f;
+        private const float PollInterval = 1.0f; // Check for changes every 1 second
 
         private static readonly HashSet<string> Whitelist = new HashSet<string>()
         {
             // Abilities
-            "hasDash", "hasWallJump", "hasDoubleJump", "hasSuperDash", "hasAcidArmour", 
-            "hasDreamNail", "dreamNailUpgraded", "hasShadowDash", "hasWaterSwim", "hasLantern",
-            "hasCyclone", "hasGreatSlash", "hasDashSlash",
+            "hasDash", "canDash", "hasWallJump", "canWallJump", "hasDoubleJump", "hasSuperDash", "canSuperDash", "hasAcidArmour", 
+            "hasDreamNail", "dreamNailUpgraded", "hasShadowDash", "canShadowDash", "hasWaterSwim", "hasLantern",
+            "hasCyclone", "hasGreatSlash", "hasDashSlash", "canOvercharm",
             // Spells
             "fireballLevel", "quakeLevel", "screechLevel",
             // Nail
             "nailLimit",
             // HP/Soul
             "maxHealth", "maxHealthBase", "maxHealthCap", "heartPieces", "heartPieceMax",
+            // Stags
+            "openedCrossroads", "openedGreenpath", "openedFungalWastes", "openedRuins1", "openedRuins2",
+            "openedRestingGrounds", "openedDeepnest", "openedHiddenStation", "openedStagNest", "openedGardensStagStation",
+            "stationsOpened", "hasStagKey",
+            // Benches
+            "tollBenchCity", "tollBenchQueensGardens", "tollBenchAbyss",
             "maxMP", "MPReserveMax", "vesselFragments", "vesselFragmentMax",
             // Keys & Maps
             "simpleKeys", "hasLoveKey", "hasSpaKey", "hasSlykey", "gaveSlykey", "hasTramPass", 
@@ -47,11 +57,6 @@ namespace BetterMultiplayer
             "grubsCollected", "ore",
             // Trinkets
             "trinket1", "trinket2", "trinket3", "trinket4",
-            // Stags
-            "openedStagCrossroads", "openedStagGreenpath", "openedStagFungalWastes", 
-            "openedStagCity", "openedStagRestingGrounds", "openedStagDeepnest", 
-            "openedStagHiddenStation", "openedStagStagNest", "openedStagWaterways", 
-            "openedStagAncientBasin",
             // Dream nail essence
             "dreamOrbs", "dreamOrbsSpent", "hasDreamGate",
             // Grimm troupe
@@ -73,6 +78,54 @@ namespace BetterMultiplayer
             // Handled via Harmony auto-patching
         }
 
+        public static void Update()
+        {
+            if (UnityEngine.Time.unscaledTime - lastPollTime >= PollInterval)
+            {
+                lastPollTime = UnityEngine.Time.unscaledTime;
+                PollLocalChanges();
+            }
+        }
+
+        private static void PollLocalChanges()
+        {
+            if (PlayerData.instance == null || isSyncing) return;
+
+            foreach (var key in Whitelist)
+            {
+                try
+                {
+                    FieldInfo field = typeof(PlayerData).GetField(key, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                    if (field != null)
+                    {
+                        var fieldVal = field.GetValue(PlayerData.instance);
+                        string currentVal = fieldVal != null ? fieldVal.ToString() : "";
+                        
+                        // If key is not in cache, initialize it
+                        if (!localStateCache.TryGetValue(key, out string cachedVal))
+                        {
+                            localStateCache[key] = currentVal;
+                            continue;
+                        }
+
+                        // If value changed locally, send update and update cache
+                        if (currentVal != cachedVal)
+                        {
+                            localStateCache[key] = currentVal;
+                            BetterMultiplayer.Instance.Log($"[Local Cache] Detected change: {key} = {currentVal}");
+                            
+                            string type = (field.FieldType == typeof(bool)) ? "bool" : "int";
+                            NetworkManager.SendPacket($"ITEM|{type}|{key}|{currentVal}");
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    BetterMultiplayer.Instance.LogError($"Error polling field {key}: {ex.Message}");
+                }
+            }
+        }
+
         public static void ApplyNetworkChange(string type, string key, string val)
         {
             try
@@ -89,6 +142,7 @@ namespace BetterMultiplayer
                         BetterMultiplayer.Instance.Log($"[Network] Syncing bool {key} = {parsedVal}");
                         isSyncing = true;
                         PlayerData.instance.SetBool(key, parsedVal);
+                        localStateCache[key] = val; // Update cache to prevent reflection detection of network write as local change
                         changed = true;
 
                         // Reset respawning enemies when partner sits at a bench
@@ -108,6 +162,7 @@ namespace BetterMultiplayer
                         BetterMultiplayer.Instance.Log($"[Network] Syncing int {key} = {parsedVal}");
                         isSyncing = true;
                         PlayerData.instance.SetInt(key, parsedVal);
+                        localStateCache[key] = val; // Update cache to prevent reflection detection of network write as local change
                         changed = true;
                     }
                 }
@@ -171,9 +226,11 @@ namespace BetterMultiplayer
                     var field = typeof(PlayerData).GetField(key, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
                     if (field != null)
                     {
+                        string valStr = "";
                         if (field.FieldType == typeof(bool))
                         {
                             bool val = (bool)field.GetValue(PlayerData.instance);
+                            valStr = val.ToString();
                             if (val)
                             {
                                 NetworkManager.SendPacket($"ITEM|bool|{key}|{val}");
@@ -182,11 +239,13 @@ namespace BetterMultiplayer
                         else if (field.FieldType == typeof(int))
                         {
                             int val = (int)field.GetValue(PlayerData.instance);
+                            valStr = val.ToString();
                             if (val > 0)
                             {
                                 NetworkManager.SendPacket($"ITEM|int|{key}|{val}");
                             }
                         }
+                        localStateCache[key] = valStr;
                     }
                 }
                 catch (Exception ex)
