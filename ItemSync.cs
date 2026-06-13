@@ -138,14 +138,39 @@ namespace BetterMultiplayer
                             continue;
                         }
 
-                        // If value changed locally, send update and update cache
+                        // If value changed locally, update cache
                         if (currentVal != cachedVal)
                         {
                             localStateCache[key] = currentVal;
                             BetterMultiplayer.Instance.Log($"[Local Cache] Detected change: {key} = {currentVal}");
                             
-                            string type = (field.FieldType == typeof(bool)) ? "bool" : "int";
-                            NetworkManager.SendPacket($"ITEM|{type}|{key}|{currentVal}");
+                            // Only send if it's a bool that became true, or an int that changed/increased
+                            bool shouldSend = false;
+                            if (field.FieldType == typeof(bool))
+                            {
+                                shouldSend = (currentVal == "True");
+                            }
+                            else if (field.FieldType == typeof(int))
+                            {
+                                int currentInt = (int)fieldVal;
+                                int cachedInt = 0;
+                                int.TryParse(cachedVal, out cachedInt);
+                                
+                                if (key == "heartPieces" || key == "vesselFragments" || key == "simpleKeys" || key == "ore")
+                                {
+                                    shouldSend = (currentInt != cachedInt);
+                                }
+                                else
+                                {
+                                    shouldSend = (currentInt > cachedInt);
+                                }
+                            }
+
+                            if (shouldSend)
+                            {
+                                string type = (field.FieldType == typeof(bool)) ? "bool" : "int";
+                                NetworkManager.SendPacket($"ITEM|{type}|{key}|{currentVal}");
+                            }
                         }
                     }
                 }
@@ -167,7 +192,8 @@ namespace BetterMultiplayer
                 if (type == "bool")
                 {
                     bool parsedVal = bool.Parse(val);
-                    if (PlayerData.instance.GetBool(key) != parsedVal)
+                    // Only sync if the incoming value is true and we don't have it yet
+                    if (parsedVal && !PlayerData.instance.GetBool(key))
                     {
                         BetterMultiplayer.Instance.Log($"[Network] Syncing bool {key} = {parsedVal}");
                         isSyncing = true;
