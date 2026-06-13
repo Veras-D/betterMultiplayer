@@ -201,18 +201,21 @@ namespace BetterMultiplayer
             try
             {
                 if (PlayerData.instance == null) return;
+                if (!FieldCache.TryGetValue(key, out FieldInfo field)) return;
 
                 bool changed = false;
 
                 if (type == "bool")
                 {
                     bool parsedVal = bool.Parse(val);
+                    bool current = (bool)field.GetValue(PlayerData.instance);
+                    
                     // Only sync if the incoming value is true and we don't have it yet
-                    if (parsedVal && !PlayerData.instance.GetBool(key))
+                    if (parsedVal && !current)
                     {
                         BetterMultiplayer.Instance.Log($"[Network] Syncing bool {key} = {parsedVal}");
                         isSyncing = true;
-                        PlayerData.instance.SetBool(key, parsedVal);
+                        field.SetValue(PlayerData.instance, parsedVal);
                         cachedBools[key] = parsedVal; // Update cache
                         changed = true;
 
@@ -227,7 +230,7 @@ namespace BetterMultiplayer
                 else if (type == "int")
                 {
                     int parsedVal = int.Parse(val);
-                    int current = PlayerData.instance.GetInt(key);
+                    int current = (int)field.GetValue(PlayerData.instance);
                     bool shouldSync = false;
 
                     if (key == "heartPieces" || key == "vesselFragments" || key == "simpleKeys" || key == "ore")
@@ -248,12 +251,12 @@ namespace BetterMultiplayer
                         if ((key == "maxHealth" || key == "maxHealthBase") && parsedVal > current)
                         {
                             int diff = parsedVal - current;
-                            int newHealth = PlayerData.instance.GetInt("health") + diff;
-                            PlayerData.instance.SetInt("health", newHealth);
+                            int newHealth = PlayerData.instance.health + diff;
+                            PlayerData.instance.health = newHealth;
                             BetterMultiplayer.Instance.Log($"[Network] Player max health increased, healing current health by +{diff} to {newHealth}");
                         }
 
-                        PlayerData.instance.SetInt(key, parsedVal);
+                        field.SetValue(PlayerData.instance, parsedVal);
                         cachedInts[key] = parsedVal; // Update cache
                         changed = true;
                     }
@@ -420,8 +423,25 @@ namespace BetterMultiplayer
         {
             if (persistentBoolData != null && persistentBoolData.activated && !ItemSync.isSyncing)
             {
-                BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {persistentBoolData.id} in {persistentBoolData.sceneName}");
-                NetworkManager.SendPacket($"PERSIST_BOOL|{persistentBoolData.sceneName}|{persistentBoolData.id}|{persistentBoolData.activated}|{persistentBoolData.semiPersistent}");
+                string sceneName = string.IsNullOrEmpty(persistentBoolData.sceneName) ? UnityEngine.SceneManagement.SceneManager.GetActiveScene().name : persistentBoolData.sceneName;
+                BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {persistentBoolData.id} in {sceneName}");
+                NetworkManager.SendPacket($"PERSIST_BOOL|{sceneName}|{persistentBoolData.id}|{persistentBoolData.activated}|{persistentBoolData.semiPersistent}");
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(PersistentBoolItem), nameof(PersistentBoolItem.SaveState))]
+    public static class PersistentBoolItem_SaveState_Patch
+    {
+        public static void Postfix(PersistentBoolItem __instance)
+        {
+            if (__instance != null && __instance.persistentBoolData != null && __instance.persistentBoolData.activated && !ItemSync.isSyncing)
+            {
+                string sceneName = (__instance.persistentBoolData != null && !string.IsNullOrEmpty(__instance.persistentBoolData.sceneName)) ? __instance.persistentBoolData.sceneName : UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+                string id = __instance.GetId();
+                bool semi = __instance.persistentBoolData.semiPersistent;
+                BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {id} in {sceneName} via SaveState");
+                NetworkManager.SendPacket($"PERSIST_BOOL|{sceneName}|{id}|True|{semi}");
             }
         }
     }

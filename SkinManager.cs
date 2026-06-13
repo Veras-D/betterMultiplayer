@@ -9,6 +9,7 @@ namespace BetterMultiplayer
     public static class SkinManager
     {
         public static string SelectedSkin { get; private set; } = "Default";
+        public static string RemoteSelectedSkin { get; private set; } = "Default";
         public static Texture2D LocalSkinTexture { get; private set; }
         public static Texture2D RemoteSkinTexture { get; private set; }
         public static Texture2D LocalCloakTexture { get; private set; }
@@ -36,6 +37,10 @@ namespace BetterMultiplayer
 
         private static MaterialPropertyBlock localBlock;
         private static MaterialPropertyBlock remoteBlock;
+        private static MaterialPropertyBlock cloakBlock;
+        private static MaterialPropertyBlock remoteCloakBlock;
+
+        private static Dictionary<string, Dictionary<string, Texture2D>> textureCache = new Dictionary<string, Dictionary<string, Texture2D>>();
 
         public static void Initialize()
         {
@@ -92,17 +97,8 @@ namespace BetterMultiplayer
                 Texture2D tex = null;
                 if (skinName != "Default")
                 {
-                    string skinPath = Path.Combine(skinsDir, skinName);
-                    string knightPng = Path.Combine(skinPath, "Knight.png");
-                    if (File.Exists(knightPng))
-                    {
-                        tex = LoadTexture(knightPng);
-                        if (tex == null) return false;
-                    }
-                    else
-                    {
-                        return false;
-                    }
+                    tex = GetCachedTexture(skinName, "Knight.png");
+                    if (tex == null) return false;
                 }
 
                 SelectedSkin = skinName;
@@ -125,6 +121,8 @@ namespace BetterMultiplayer
                 {
                     ApplyCharmSkins(CharmIconList.Instance);
                 }
+                UpdateHUDSkin();
+                ForceUpdateAllSprites();
                 if (NetworkManager.IsClientConnected)
                 {
                     NetworkManager.SendPacket($"SKIN|{skinName}");
@@ -140,6 +138,8 @@ namespace BetterMultiplayer
 
         public static void ApplyRemoteSkin(string skinName)
         {
+            if (RemoteSelectedSkin == skinName) return;
+
             try
             {
                 Texture2D tex = null;
@@ -154,12 +154,7 @@ namespace BetterMultiplayer
 
                 if (skinName != "Default")
                 {
-                    string skinPath = Path.Combine(skinsDir, skinName);
-                    string knightPng = Path.Combine(skinPath, "Knight.png");
-                    if (File.Exists(knightPng))
-                    {
-                        tex = LoadTexture(knightPng);
-                    }
+                    tex = GetCachedTexture(skinName, "Knight.png");
                     cloak = LoadExtraTexture(skinName, "Cloak.png");
                     vs = LoadExtraTexture(skinName, "VS.png");
                     wings = LoadExtraTexture(skinName, "Wings.png");
@@ -180,7 +175,10 @@ namespace BetterMultiplayer
                 RemoteShriekTexture = shriek;
                 RemoteShadeTexture = shade;
 
+                RemoteSelectedSkin = skinName;
+
                 BetterMultiplayer.Instance.Log($"Loaded skin for partner: {skinName}");
+                ForceUpdateAllSprites();
             }
             catch (Exception ex)
             {
@@ -198,10 +196,18 @@ namespace BetterMultiplayer
         {
             if (localMeshRenderer == null && HeroController.instance != null)
             {
-                var sprite = HeroController.instance.GetComponentInChildren<tk2dSprite>();
-                if (sprite != null)
+                Transform spriteTransform = HeroController.instance.transform.Find("Sprite");
+                if (spriteTransform != null)
                 {
-                    localMeshRenderer = sprite.GetComponent<MeshRenderer>();
+                    localMeshRenderer = spriteTransform.GetComponent<MeshRenderer>();
+                }
+                else
+                {
+                    var sprite = HeroController.instance.GetComponentInChildren<tk2dSprite>();
+                    if (sprite != null)
+                    {
+                        localMeshRenderer = sprite.GetComponent<MeshRenderer>();
+                    }
                 }
             }
             return localMeshRenderer;
@@ -211,11 +217,7 @@ namespace BetterMultiplayer
         {
             if (remoteMeshRenderer == null && NetworkManager.puppet != null)
             {
-                var sprite = NetworkManager.puppet.GetComponentInChildren<tk2dSprite>();
-                if (sprite != null)
-                {
-                    remoteMeshRenderer = sprite.GetComponent<MeshRenderer>();
-                }
+                remoteMeshRenderer = NetworkManager.puppet.GetComponent<MeshRenderer>();
             }
             return remoteMeshRenderer;
         }
@@ -430,27 +432,65 @@ namespace BetterMultiplayer
             return "Unknown";
         }
 
-        private static Texture2D LoadExtraTexture(string skinName, string fileName)
+        private static Texture2D GetCachedTexture(string skinName, string fileName)
         {
             if (skinName == "Default") return null;
+
+            if (!textureCache.TryGetValue(skinName, out var skinCache))
+            {
+                skinCache = new Dictionary<string, Texture2D>();
+                textureCache[skinName] = skinCache;
+            }
+
+            if (skinCache.TryGetValue(fileName, out var cachedTex))
+            {
+                return cachedTex;
+            }
+
             try
             {
                 string skinPath = Path.Combine(skinsDir, skinName);
                 string fullPath = Path.Combine(skinPath, fileName);
                 if (File.Exists(fullPath))
                 {
-                    return LoadTexture(fullPath);
+                    Texture2D tex = LoadTexture(fullPath);
+                    if (tex != null)
+                    {
+                        skinCache[fileName] = tex;
+                        return tex;
+                    }
                 }
             }
             catch (Exception ex)
             {
-                BetterMultiplayer.Instance.LogError($"Error loading extra texture {fileName} for skin {skinName}: " + ex);
+                BetterMultiplayer.Instance.LogError($"Error loading texture {fileName} for skin {skinName}: {ex}");
             }
+
             return null;
         }
 
-        private static MaterialPropertyBlock cloakBlock;
-        private static MaterialPropertyBlock remoteCloakBlock;
+        private static Texture2D LoadExtraTexture(string skinName, string fileName)
+        {
+            return GetCachedTexture(skinName, fileName);
+        }
+
+        public static void ForceUpdateAllSprites()
+        {
+            try
+            {
+                foreach (var sprite in Resources.FindObjectsOfTypeAll<tk2dSprite>())
+                {
+                    if (sprite != null && sprite.gameObject != null)
+                    {
+                        tk2dSprite_Awake_Patch.Postfix(sprite);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in ForceUpdateAllSprites: " + ex);
+            }
+        }
  
         public static void UpdateCloakSkin()
         {
@@ -756,7 +796,7 @@ namespace BetterMultiplayer
             {
                 string name = __instance.gameObject.name;
                 bool isRemote = name.StartsWith("Remote_");
- 
+  
                 if (isRemote)
                 {
                     if (SkinManager.RemoteShadeTexture != null && name.Contains("Hollow Shade"))
@@ -774,14 +814,62 @@ namespace BetterMultiplayer
                         ApplyTexture(__instance, SkinManager.RemoteWingsTexture);
                     }
                     else if (SkinManager.RemoteSprintTexture != null && 
-                             (name.Contains("Dash Effect") || name.Contains("dash") || name.Contains("Dash") || name.Contains("sprint") || name.Contains("Sprint")))
+                             (name.StartsWith("Remote_Dash Effect") || name.StartsWith("Remote_sprint_effect")))
                     {
                         ApplyTexture(__instance, SkinManager.RemoteSprintTexture);
+                    }
+                    else if (SkinManager.RemoteVoidSpellsTexture != null && 
+                             (name.Contains("Fireball2") || name.Contains("Shadow Soul") || name.Contains("Shade Soul")))
+                    {
+                        ApplyTexture(__instance, SkinManager.RemoteVoidSpellsTexture);
+                    }
+                    else if (SkinManager.RemoteWraithsTexture != null && 
+                             (name.Contains("Howling Wraiths") || name.Contains("Scream") || name.Contains("Wraiths")))
+                    {
+                        ApplyTexture(__instance, SkinManager.RemoteWraithsTexture);
+                    }
+                    else if (SkinManager.RemoteShriekTexture != null && 
+                             (name.Contains("Abyss Shriek") || name.Contains("Abyss Scream") || name.Contains("Shriek")))
+                    {
+                        ApplyTexture(__instance, SkinManager.RemoteShriekTexture);
                     }
                 }
                 else
                 {
-                    if (SkinManager.LocalShadeTexture != null && name.StartsWith("Hollow Shade"))
+                    // Check if it is the local player main sprite
+                    if (name == "Sprite" && __instance.transform.parent != null && __instance.transform.parent.gameObject == HeroController.instance?.gameObject)
+                    {
+                        if (SkinManager.LocalSkinTexture != null)
+                        {
+                            ApplyTexture(__instance, SkinManager.LocalSkinTexture);
+                        }
+                    }
+                    // Check if it is local player cloak
+                    else if (name == "Cloak" && __instance.transform.parent != null && __instance.transform.parent.gameObject == HeroController.instance?.gameObject)
+                    {
+                        if (SkinManager.LocalCloakTexture != null)
+                        {
+                            ApplyTexture(__instance, SkinManager.LocalCloakTexture);
+                        }
+                    }
+                    // Check if it is remote puppet main sprite
+                    else if (__instance.GetComponent<RemotePlayerPuppet>() != null)
+                    {
+                        if (SkinManager.RemoteSkinTexture != null)
+                        {
+                            ApplyTexture(__instance, SkinManager.RemoteSkinTexture);
+                        }
+                    }
+                    // Check if it is remote puppet cloak
+                    else if (name == "Cloak" && __instance.transform.parent != null && __instance.transform.parent.GetComponent<RemotePlayerPuppet>() != null)
+                    {
+                        if (SkinManager.RemoteCloakTexture != null)
+                        {
+                            ApplyTexture(__instance, SkinManager.RemoteCloakTexture);
+                        }
+                    }
+                    // Local effects
+                    else if (SkinManager.LocalShadeTexture != null && name.StartsWith("Hollow Shade"))
                     {
                         ApplyTexture(__instance, SkinManager.LocalShadeTexture);
                     }
@@ -796,7 +884,7 @@ namespace BetterMultiplayer
                         ApplyTexture(__instance, SkinManager.LocalWingsTexture);
                     }
                     else if (SkinManager.LocalSprintTexture != null && 
-                             (name.StartsWith("Dash Effect") || name.Contains("dash") || name.Contains("Dash") || name.Contains("sprint") || name.Contains("Sprint")))
+                             (name.StartsWith("Dash Effect") || name.StartsWith("sprint_effect")))
                     {
                         ApplyTexture(__instance, SkinManager.LocalSprintTexture);
                     }
@@ -821,7 +909,7 @@ namespace BetterMultiplayer
             {
                 if (BetterMultiplayer.Instance != null)
                 {
-                    BetterMultiplayer.Instance.LogError("Error in tk2dSprite_Start_Patch: " + ex);
+                    BetterMultiplayer.Instance.LogError("Error in tk2dSprite_Awake_Patch: " + ex);
                 }
             }
         }
@@ -837,7 +925,18 @@ namespace BetterMultiplayer
                 renderer.SetPropertyBlock(block);
             }
         }
+    }
 
+    [HarmonyPatch(typeof(tk2dBaseSprite), nameof(tk2dBaseSprite.SetSprite), new Type[] { typeof(int) })]
+    public static class tk2dBaseSprite_SetSprite_Patch
+    {
+        public static void Postfix(tk2dBaseSprite __instance)
+        {
+            if (__instance is tk2dSprite sprite)
+            {
+                tk2dSprite_Awake_Patch.Postfix(sprite);
+            }
+        }
     }
 
     [HarmonyPatch(typeof(CharmIconList), "Start")]
