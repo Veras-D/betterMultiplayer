@@ -152,6 +152,7 @@ namespace BetterMultiplayer
         void Start()
         {
             UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnMenuSceneLoaded;
+            wasMenuShownLastFrame = false;
         }
 
         void OnDestroy()
@@ -171,6 +172,7 @@ namespace BetterMultiplayer
         {
             BetterMultiplayer.Instance.Log($"OnMenuSceneLoaded triggered: Scene name is '{scene.name}'");
             localAnimatorCache = null;
+            wasMenuShownLastFrame = false;
             // Auto-show menu on Title screen so players can configure it easily
             if (scene.name == "Menu_Title")
             {
