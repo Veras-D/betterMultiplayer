@@ -41,8 +41,14 @@ namespace BetterMultiplayer
             if (partnerHealthbar != null)
             {
                 // Position it above the player's own health bar, and scale it down slightly
-                partnerHealthbar.transform.localPosition = mainHealthbar.transform.localPosition + new Vector3(0f, 1.1f, -0.05f);
+                partnerHealthbar.transform.position = mainHealthbar.transform.position + new Vector3(0.1f, 1.0f, -0.05f);
                 partnerHealthbar.transform.localScale = mainHealthbar.transform.localScale * 0.65f;
+
+                if (Time.frameCount % 300 == 0)
+                {
+                    BetterMultiplayer.Instance.Log($"[HUD Debug] mainHealthbar={mainHealthbar.name}, parent={mainHealthbar.transform.parent?.name}, localPos={mainHealthbar.transform.localPosition}, worldPos={mainHealthbar.transform.position}, scale={mainHealthbar.transform.localScale}, layer={mainHealthbar.layer}");
+                    BetterMultiplayer.Instance.Log($"[HUD Debug] partnerHealthbar={partnerHealthbar.name}, parent={partnerHealthbar.transform.parent?.name}, localPos={partnerHealthbar.transform.localPosition}, worldPos={partnerHealthbar.transform.position}, scale={partnerHealthbar.transform.localScale}, layer={partnerHealthbar.layer}");
+                }
 
                 int totalMasksNeeded = targetMaxHealth + targetHealthBlue;
                 if (maskClones.Count != totalMasksNeeded || targetMaxHealth != lastMaxHealth || targetHealthBlue != lastHealthBlue)
@@ -92,7 +98,7 @@ namespace BetterMultiplayer
                 partnerHealthbar.layer = mainHealthbar.layer;
                 
                 // Position it above the player's own health bar, and scale it down slightly
-                partnerHealthbar.transform.localPosition = mainHealthbar.transform.localPosition + new Vector3(0f, 1.1f, -0.05f);
+                partnerHealthbar.transform.position = mainHealthbar.transform.position + new Vector3(0.1f, 1.0f, -0.05f);
                 partnerHealthbar.transform.localScale = mainHealthbar.transform.localScale * 0.65f;
             }
             catch (Exception ex)
