@@ -40,9 +40,9 @@ namespace BetterMultiplayer
 
             if (partnerHealthbar != null)
             {
-                // Dynamically update local position and scale to track main healthbar
-                partnerHealthbar.transform.localPosition = mainHealthbar.transform.localPosition + new Vector3(0.5f, 0.9f, -0.05f);
-                partnerHealthbar.transform.localScale = mainHealthbar.transform.localScale * 0.65f;
+                // Ensure it stays active and positioned above main healthbar
+                partnerHealthbar.transform.localPosition = new Vector3(0.5f, 1.1f, -0.05f);
+                partnerHealthbar.transform.localScale = new Vector3(0.65f, 0.65f, 1f);
 
                 int totalMasksNeeded = targetMaxHealth + targetHealthBlue;
                 if (maskClones.Count != totalMasksNeeded || targetMaxHealth != lastMaxHealth || targetHealthBlue != lastHealthBlue)
@@ -87,11 +87,13 @@ namespace BetterMultiplayer
             {
                 BetterMultiplayer.Instance.Log("Creating PartnerHealthbar...");
                 partnerHealthbar = new GameObject("PartnerHealthbar");
-                partnerHealthbar.transform.SetParent(mainHealthbar.transform.parent, false);
+                // Parent directly to mainHealthbar so it inherits position, scale, active states, and lifecycle
+                partnerHealthbar.transform.SetParent(mainHealthbar.transform, false);
+                partnerHealthbar.layer = mainHealthbar.layer;
                 
-                // Position it above the player's own health bar, and scale it down slightly (closer to camera)
-                partnerHealthbar.transform.localPosition = mainHealthbar.transform.localPosition + new Vector3(0.5f, 0.9f, -0.05f);
-                partnerHealthbar.transform.localScale = mainHealthbar.transform.localScale * 0.65f;
+                // Position it above the player's own health bar, and scale it down slightly
+                partnerHealthbar.transform.localPosition = new Vector3(0.5f, 1.1f, -0.05f);
+                partnerHealthbar.transform.localScale = new Vector3(0.65f, 0.65f, 1f);
             }
             catch (Exception ex)
             {
@@ -143,6 +145,7 @@ namespace BetterMultiplayer
                     GameObject maskClone = Instantiate(templateMask, partnerHealthbar.transform);
                     maskClone.transform.localPosition = new Vector3(i * spacing, 0f, 0f);
                     maskClone.transform.localScale = Vector3.one;
+                    SetLayerRecursive(maskClone, mainHealthbar.layer);
 
                     // Disable all PlayMakerFSMs on it so it doesn't run the main player's health logic
                     foreach (var fsm in maskClone.GetComponents<PlayMakerFSM>())
@@ -163,6 +166,16 @@ namespace BetterMultiplayer
             catch (Exception ex)
             {
                 BetterMultiplayer.Instance.LogError("Error rebuilding partner masks: " + ex);
+            }
+        }
+
+        private void SetLayerRecursive(GameObject go, int layer)
+        {
+            if (go == null) return;
+            go.layer = layer;
+            foreach (Transform child in go.transform)
+            {
+                SetLayerRecursive(child.gameObject, layer);
             }
         }
 
