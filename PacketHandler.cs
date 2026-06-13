@@ -128,7 +128,7 @@ namespace BetterMultiplayer
                     string skinName = parts[1];
                     SkinManager.ApplyRemoteSkin(skinName);
                 }
-                else if (header == "SHADE_STATE" && parts.Length == 6)
+                else if (header == "SHADE_STATE" && parts.Length >= 6)
                 {
                     string scene = parts[1];
                     float x = float.Parse(parts[2], CultureInfo.InvariantCulture);
@@ -136,7 +136,15 @@ namespace BetterMultiplayer
                     int geo = int.Parse(parts[4]);
                     bool limited = bool.Parse(parts[5]);
 
-                    EnemySync.HandleRemoteShadeState(scene, x, y, geo, limited);
+                    float mapX = -10000f;
+                    float mapY = -10000f;
+                    if (parts.Length >= 8)
+                    {
+                        mapX = float.Parse(parts[6], CultureInfo.InvariantCulture);
+                        mapY = float.Parse(parts[7], CultureInfo.InvariantCulture);
+                    }
+
+                    EnemySync.HandleRemoteShadeState(scene, x, y, geo, limited, mapX, mapY);
                 }
             }
             catch (Exception ex)

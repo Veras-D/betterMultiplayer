@@ -547,6 +547,7 @@ namespace BetterMultiplayer
     public static class GameMap_Update_Patch
     {
         private static GameObject partnerMarker;
+        private static GameObject partnerShadeMarker;
 
         public static void Postfix(GameMap __instance)
         {
@@ -559,6 +560,11 @@ namespace BetterMultiplayer
                         UnityEngine.Object.Destroy(partnerMarker);
                         partnerMarker = null;
                     }
+                    if (partnerShadeMarker != null)
+                    {
+                        UnityEngine.Object.Destroy(partnerShadeMarker);
+                        partnerShadeMarker = null;
+                    }
                     return;
                 }
 
@@ -569,65 +575,102 @@ namespace BetterMultiplayer
                     {
                         partnerMarker.SetActive(false);
                     }
-                    return;
                 }
-
-                GameObject areaGo;
-                GameObject sceneGo = FindSceneGameObject(__instance, remoteScene, out areaGo);
-                if (sceneGo == null || areaGo == null)
+                else
                 {
-                    if (partnerMarker != null && partnerMarker.activeSelf)
+                    GameObject areaGo;
+                    GameObject sceneGo = FindSceneGameObject(__instance, remoteScene, out areaGo);
+                    if (sceneGo == null || areaGo == null)
                     {
-                        partnerMarker.SetActive(false);
-                    }
-                    return;
-                }
-
-                if (partnerMarker == null && __instance.compassIcon != null)
-                {
-                    partnerMarker = UnityEngine.Object.Instantiate(__instance.compassIcon, __instance.compassIcon.transform.parent);
-                    
-                    // Set partner color to Cyan (0.2, 0.8, 1.0)
-                    var sr = partnerMarker.GetComponent<SpriteRenderer>();
-                    if (sr != null)
-                    {
-                        sr.color = new Color(0.2f, 0.8f, 1f);
+                        if (partnerMarker != null && partnerMarker.activeSelf)
+                        {
+                            partnerMarker.SetActive(false);
+                        }
                     }
                     else
                     {
-                        var tk2d = partnerMarker.GetComponent("tk2dBaseSprite");
+                        if (partnerMarker == null && __instance.compassIcon != null)
+                        {
+                            partnerMarker = UnityEngine.Object.Instantiate(__instance.compassIcon, __instance.compassIcon.transform.parent);
+                            
+                            // Set partner color to Cyan (0.2, 0.8, 1.0)
+                            var sr = partnerMarker.GetComponent<SpriteRenderer>();
+                            if (sr != null)
+                            {
+                                sr.color = new Color(0.2f, 0.8f, 1f);
+                            }
+                            else
+                            {
+                                var tk2d = partnerMarker.GetComponent("tk2dBaseSprite");
+                                if (tk2d != null)
+                                {
+                                    var colorProp = tk2d.GetType().GetProperty("color");
+                                    if (colorProp != null)
+                                    {
+                                        colorProp.SetValue(tk2d, new Color(0.2f, 0.8f, 1f), null);
+                                    }
+                                }
+                            }
+                        }
+
+                        if (partnerMarker != null)
+                        {
+                            partnerMarker.SetActive(__instance.compassIcon.activeSelf);
+
+                            // Calculate position
+                            Vector3 currentScenePos = sceneGo.transform.localPosition + areaGo.transform.localPosition;
+                            
+                            Vector2 boundsSize = Vector2.zero;
+                            var sceneSr = sceneGo.GetComponent<SpriteRenderer>();
+                            if (sceneSr != null && sceneSr.sprite != null)
+                            {
+                                boundsSize = sceneSr.sprite.bounds.size;
+                            }
+
+                            float normX = NetworkManager.RemoteNormX;
+                            float normY = NetworkManager.RemoteNormY;
+
+                            float localX = currentScenePos.x - boundsSize.x / 2f + normX * boundsSize.x;
+                            float localY = currentScenePos.y - boundsSize.y / 2f + normY * boundsSize.y;
+
+                            partnerMarker.transform.localPosition = new Vector3(localX, localY, -1.5f);
+                        }
+                    }
+                }
+
+                // Instantiate partnerShadeMarker if needed
+                if (partnerShadeMarker == null && __instance.shadeMarker != null)
+                {
+                    partnerShadeMarker = UnityEngine.Object.Instantiate(__instance.shadeMarker, __instance.shadeMarker.transform.parent);
+                    
+                    // Set partner color to Cyan tint (0.4f, 0.8f, 1.0f)
+                    var sr = partnerShadeMarker.GetComponent<SpriteRenderer>();
+                    if (sr != null)
+                    {
+                        sr.color = new Color(0.4f, 0.8f, 1f);
+                    }
+                    else
+                    {
+                        var tk2d = partnerShadeMarker.GetComponent("tk2dBaseSprite");
                         if (tk2d != null)
                         {
                             var colorProp = tk2d.GetType().GetProperty("color");
                             if (colorProp != null)
                             {
-                                colorProp.SetValue(tk2d, new Color(0.2f, 0.8f, 1f), null);
+                                colorProp.SetValue(tk2d, new Color(0.4f, 0.8f, 1f), null);
                             }
                         }
                     }
                 }
 
-                if (partnerMarker != null)
+                if (partnerShadeMarker != null)
                 {
-                    partnerMarker.SetActive(__instance.compassIcon.activeSelf);
-
-                    // Calculate position
-                    Vector3 currentScenePos = sceneGo.transform.localPosition + areaGo.transform.localPosition;
-                    
-                    Vector2 boundsSize = Vector2.zero;
-                    var sceneSr = sceneGo.GetComponent<SpriteRenderer>();
-                    if (sceneSr != null && sceneSr.sprite != null)
+                    bool showRemoteShade = EnemySync.RemoteSoulLimited && __instance.shadeMarker.activeSelf && EnemySync.RemoteShadeMapX > -9000f;
+                    partnerShadeMarker.SetActive(showRemoteShade);
+                    if (showRemoteShade)
                     {
-                        boundsSize = sceneSr.sprite.bounds.size;
+                        partnerShadeMarker.transform.localPosition = new Vector3(EnemySync.RemoteShadeMapX, EnemySync.RemoteShadeMapY, -1.2f);
                     }
-
-                    float normX = NetworkManager.RemoteNormX;
-                    float normY = NetworkManager.RemoteNormY;
-
-                    float localX = currentScenePos.x - boundsSize.x / 2f + normX * boundsSize.x;
-                    float localY = currentScenePos.y - boundsSize.y / 2f + normY * boundsSize.y;
-
-                    partnerMarker.transform.localPosition = new Vector3(localX, localY, -1.5f);
                 }
             }
             catch (Exception ex)
@@ -668,6 +711,11 @@ namespace BetterMultiplayer
             {
                 UnityEngine.Object.Destroy(partnerMarker);
                 partnerMarker = null;
+            }
+            if (partnerShadeMarker != null)
+            {
+                UnityEngine.Object.Destroy(partnerShadeMarker);
+                partnerShadeMarker = null;
             }
         }
     }

@@ -21,6 +21,8 @@ namespace BetterMultiplayer
         public static float RemoteShadeY = 0f;
         public static int RemoteShadeGeo = 0;
         public static bool RemoteSoulLimited = false;
+        public static float RemoteShadeMapX = -10000f;
+        public static float RemoteShadeMapY = -10000f;
         public static GameObject RemoteShadeInstance = null;
 
         // Local Shade change detection cache
@@ -29,6 +31,8 @@ namespace BetterMultiplayer
         private static float lastShadeY = 0f;
         private static int lastGeoPool = 0;
         private static bool lastSoulLimited = false;
+        private static float lastShadeMapX = -10000f;
+        private static float lastShadeMapY = -10000f;
 
         public static void Initialize()
         {
@@ -63,21 +67,26 @@ namespace BetterMultiplayer
                 float currentY = PlayerData.instance.GetFloat("shadePositionY");
                 int currentGeo = PlayerData.instance.GetInt("geoPool");
                 bool currentLimited = PlayerData.instance.GetBool("soulLimited");
+                Vector3 currentMapPos = PlayerData.instance.shadeMapPos;
 
                 if (force || 
                     currentScene != lastShadeScene || 
                     Mathf.Abs(currentX - lastShadeX) > 0.01f || 
                     Mathf.Abs(currentY - lastShadeY) > 0.01f || 
                     currentGeo != lastGeoPool || 
-                    currentLimited != lastSoulLimited)
+                    currentLimited != lastSoulLimited ||
+                    Mathf.Abs(currentMapPos.x - lastShadeMapX) > 0.01f ||
+                    Mathf.Abs(currentMapPos.y - lastShadeMapY) > 0.01f)
                 {
                     lastShadeScene = currentScene;
                     lastShadeX = currentX;
                     lastShadeY = currentY;
                     lastGeoPool = currentGeo;
                     lastSoulLimited = currentLimited;
+                    lastShadeMapX = currentMapPos.x;
+                    lastShadeMapY = currentMapPos.y;
 
-                    NetworkManager.SendPacket($"SHADE_STATE|{currentScene}|{currentX.ToString("F3", CultureInfo.InvariantCulture)}|{currentY.ToString("F3", CultureInfo.InvariantCulture)}|{currentGeo}|{currentLimited}");
+                    NetworkManager.SendPacket($"SHADE_STATE|{currentScene}|{currentX.ToString("F3", CultureInfo.InvariantCulture)}|{currentY.ToString("F3", CultureInfo.InvariantCulture)}|{currentGeo}|{currentLimited}|{currentMapPos.x.ToString("F3", CultureInfo.InvariantCulture)}|{currentMapPos.y.ToString("F3", CultureInfo.InvariantCulture)}");
                 }
             }
             catch (Exception ex)
@@ -86,15 +95,17 @@ namespace BetterMultiplayer
             }
         }
 
-        public static void HandleRemoteShadeState(string scene, float x, float y, int geo, bool limited)
+        public static void HandleRemoteShadeState(string scene, float x, float y, int geo, bool limited, float mapX = -10000f, float mapY = -10000f)
         {
             RemoteShadeScene = scene;
             RemoteShadeX = x;
             RemoteShadeY = y;
             RemoteShadeGeo = geo;
             RemoteSoulLimited = limited;
+            RemoteShadeMapX = mapX;
+            RemoteShadeMapY = mapY;
 
-            BetterMultiplayer.Instance.Log($"[ShadeSync] Received remote shade state: scene={scene}, x={x}, y={y}, geo={geo}, limited={limited}");
+            BetterMultiplayer.Instance.Log($"[ShadeSync] Received remote shade state: scene={scene}, x={x}, y={y}, geo={geo}, limited={limited}, mapX={mapX}, mapY={mapY}");
 
             UpdateRemoteShadeSpawning();
         }
