@@ -158,14 +158,6 @@ namespace BetterMultiplayer
         void OnDestroy()
         {
             UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnMenuSceneLoaded;
-            if (wasControlRelinquished && HeroController.instance != null)
-            {
-                try
-                {
-                    HeroController.instance.RegainControl();
-                }
-                catch {}
-            }
         }
 
         private void OnMenuSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
@@ -289,15 +281,7 @@ namespace BetterMultiplayer
             {
                 Cursor.visible = true;
                 Cursor.lockState = CursorLockMode.None;
-                if (HeroController.instance != null && !wasControlRelinquished)
-                {
-                    try
-                    {
-                        HeroController.instance.RelinquishControl();
-                        wasControlRelinquished = true;
-                    }
-                    catch {}
-                }
+                wasControlRelinquished = true;
             }
             else
             {
@@ -305,15 +289,7 @@ namespace BetterMultiplayer
                 {
                     Cursor.visible = false;
                     Cursor.lockState = CursorLockMode.Locked;
-                    if (HeroController.instance != null)
-                    {
-                        try
-                        {
-                            HeroController.instance.RegainControl();
-                            wasControlRelinquished = false;
-                        }
-                        catch {}
-                    }
+                    wasControlRelinquished = false;
                 }
             }
 
