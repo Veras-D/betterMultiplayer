@@ -35,6 +35,8 @@ jobs:
         cp default_preview.png publish/BepInEx/plugins/betterMultiplayer/
         # Copy Skins folder
         cp -r Skins publish/BepInEx/plugins/betterMultiplayer/
+        # Copy BepInEx core engines and patchers
+        cp -r BepInEx/core BepInEx/patchers publish/BepInEx/
         # Copy BepInEx root loaders
         cp winhttp.dll doorstop_config.ini publish/
         # Compress the structure including root files
