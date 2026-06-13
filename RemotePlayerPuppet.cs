@@ -139,6 +139,7 @@ namespace BetterMultiplayer
                     if (prefab != null)
                     {
                         GameObject slash = Instantiate(prefab, transform.position, transform.rotation);
+                        slash.name = "Remote_" + slash.name;
                         slash.transform.localScale = transform.localScale;
                         SanitizeEffect(slash);
                         Destroy(slash, 0.3f);
@@ -150,6 +151,7 @@ namespace BetterMultiplayer
                     if (prefab != null)
                     {
                         GameObject dash = Instantiate(prefab, transform.position, transform.rotation);
+                        dash.name = "Remote_" + dash.name;
                         dash.transform.localScale = transform.localScale;
                         SanitizeEffect(dash);
                         Destroy(dash, 0.5f);
@@ -161,6 +163,7 @@ namespace BetterMultiplayer
                     if (prefab != null)
                     {
                         GameObject wings = Instantiate(prefab, transform.position, transform.rotation);
+                        wings.name = "Remote_" + wings.name;
                         wings.transform.localScale = transform.localScale;
                         SanitizeEffect(wings);
                         Destroy(wings, 0.6f);
