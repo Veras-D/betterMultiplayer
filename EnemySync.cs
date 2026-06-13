@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using HarmonyLib;
 using UnityEngine;
+using HutongGames.PlayMaker;
 
 namespace BetterMultiplayer
 {
@@ -155,7 +156,23 @@ namespace BetterMultiplayer
 
                 foreach (var fsm in RemoteShadeInstance.GetComponents<PlayMakerFSM>())
                 {
-                    UnityEngine.Object.Destroy(fsm);
+                    foreach (var state in fsm.FsmStates)
+                    {
+                        var actionList = new List<FsmStateAction>(state.Actions);
+                        for (int i = actionList.Count - 1; i >= 0; i--)
+                        {
+                            var action = actionList[i];
+                            if (action != null)
+                            {
+                                string typeName = action.GetType().Name;
+                                if (typeName.Contains("PlayerData"))
+                                {
+                                    actionList.RemoveAt(i);
+                                }
+                            }
+                        }
+                        state.Actions = actionList.ToArray();
+                    }
                 }
 
                 HealthManager hm = RemoteShadeInstance.GetComponent<HealthManager>();
