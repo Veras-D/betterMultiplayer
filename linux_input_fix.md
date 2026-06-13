@@ -91,3 +91,33 @@ To solve **Root Cause A** (system-level `F10` interception):
 * A permanent `25x25` GUI Button labeled `"X"` is rendered at screen coordinates `(10, 10)`.
 * Because mouse click event translation operates reliably under Linux/Proton, this button provides a foolproof interface to toggle menu visibility without relying on keyboard key event propagation.
 * When the mod menu is closed (`showMenu = false`), the `"X"` button remains rendered to let the player easily reopen the settings menu.
+
+---
+
+## 3. Refinement & Resolution (Incorporating Architectural Feedback)
+
+After reviewing the initial implementation with community feedback, the following input management refinements were deployed:
+
+### Refinement 1: Frame-Based Focus Locking & Ordering
+* **Issue**: Unconditionally calling `GUI.FocusWindow(id)` on every `OnGUI` frame prevents the window from ever losing focus dynamically (such as when interacting with overlapping game UI).
+* **Refinement**: 
+  * Focus is locked by calling `GUI.FocusWindow(10985)` and `GUI.BringWindowToFront(10985)` **only on the frame the menu is toggled open** (transition frame).
+  * To handle focus-loss recovery gracefully, mouse click event detection hooks into the window context via `DrawMenuWindow`. Clicking inside the window background triggers focus and ordering recovery:
+    ```csharp
+    if (Event.current != null && Event.current.type == EventType.MouseDown)
+    {
+        GUI.FocusWindow(10985);
+        GUI.BringWindowToFront(10985);
+    }
+    ```
+
+### Refinement 2: Configurable & Rebindable Toggle Key
+* **Issue**: Desktop environment shortcuts are system-wide and highly customized. Hardcoding `F10` risks constant collision.
+* **Refinement**:
+  * Bound a BepInEx config entry `MenuToggleKeySetting` (defaulting to `KeyCode.F10`), allowing users to configure their own custom shortcut inside the mod's configuration file (`Settings/MenuToggleKey`).
+  * Mapped the configured key to `InControl.Key` dynamically inside the InControl input check.
+
+### Refinement 3: Documented Known Controller Mapping Quirks
+* **Steam Input**: If Steam Input is active, the controller maps as a virtual Xbox controller. Players with custom Steam Input configurations may experience virtual bumper bindings which translate transparently, but direct mapping profiles might differ if Steam Input is disabled. A note has been added to check Steam Input configuration if bindings don't align.
+
+

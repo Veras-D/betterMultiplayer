@@ -14,6 +14,7 @@ namespace BetterMultiplayer
     {
         public static BetterMultiplayer Instance { get; private set; }
         public static ConfigEntry<string> ActiveSkinSetting;
+        public static ConfigEntry<KeyCode> MenuToggleKeySetting;
 
         private static GameObject managerGo;
 
@@ -34,6 +35,13 @@ namespace BetterMultiplayer
                     "ActiveSkin",
                     "Default",
                     "The custom skin to load automatically on startup."
+                );
+
+                MenuToggleKeySetting = Config.Bind(
+                    "Settings",
+                    "MenuToggleKey",
+                    KeyCode.F10,
+                    "The key used to toggle the mod menu visibility."
                 );
 
                 if (ActiveSkinSetting.Value != "Default")
@@ -162,17 +170,27 @@ namespace BetterMultiplayer
             }
         }
 
-        private bool wasF10PressedLastFrame = false;
+        private bool wasToggleKeyPressedLastFrame = false;
 
         [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
-        private bool CheckInControlF10Pressed()
+        private bool CheckInControlToggleKeyPressed()
         {
             var provider = InputManager.KeyboardProvider;
             if (provider == null) return false;
 
-            bool f10Down = provider.GetKeyIsPressed(Key.F10);
-            bool pressed = f10Down && !wasF10PressedLastFrame;
-            wasF10PressedLastFrame = f10Down;
+            Key targetKey = Key.F10;
+            if (BetterMultiplayer.MenuToggleKeySetting != null)
+            {
+                var configuredKey = BetterMultiplayer.MenuToggleKeySetting.Value;
+                if (Enum.TryParse<Key>(configuredKey.ToString(), true, out var parsedKey))
+                {
+                    targetKey = parsedKey;
+                }
+            }
+
+            bool keyDown = provider.GetKeyIsPressed(targetKey);
+            bool pressed = keyDown && !wasToggleKeyPressedLastFrame;
+            wasToggleKeyPressedLastFrame = keyDown;
             return pressed;
         }
 
@@ -188,26 +206,33 @@ namespace BetterMultiplayer
         void Update()
         {
             // Keyboard toggle fallback (using both legacy Input and InControl for cross-platform robustness)
-            bool f10Pressed = false;
+            bool togglePressed = false;
             try
             {
-                f10Pressed = Input.GetKeyDown(KeyCode.F10);
-            }
-            catch {}
-
-            try
-            {
-                if (CheckInControlF10Pressed())
+                if (BetterMultiplayer.MenuToggleKeySetting != null)
                 {
-                    f10Pressed = true;
+                    togglePressed = Input.GetKeyDown(BetterMultiplayer.MenuToggleKeySetting.Value);
+                }
+                else
+                {
+                    togglePressed = Input.GetKeyDown(KeyCode.F10);
                 }
             }
             catch {}
 
-            if (f10Pressed)
+            try
+            {
+                if (CheckInControlToggleKeyPressed())
+                {
+                    togglePressed = true;
+                }
+            }
+            catch {}
+
+            if (togglePressed)
             {
                 showMenu = !showMenu;
-                BetterMultiplayer.Instance.Log($"Toggled menu via F10. showMenu is now: {showMenu}");
+                BetterMultiplayer.Instance.Log($"Toggled menu via key. showMenu is now: {showMenu}");
             }
 
             // Controller toggle: Hold LB + RB (joystick bumpers) for 1 second
@@ -311,6 +336,7 @@ namespace BetterMultiplayer
         }
 
         private Rect menuWindowRect = new Rect(10, 40, 260, 220);
+        private bool wasMenuShownLastFrame = false;
 
         void OnGUI()
         {
@@ -321,7 +347,11 @@ namespace BetterMultiplayer
                 BetterMultiplayer.Instance.Log($"Toggled menu via on-screen X button. showMenu is now: {showMenu}");
             }
 
-            if (!showMenu) return;
+            if (!showMenu)
+            {
+                wasMenuShownLastFrame = false;
+                return;
+            }
 
             int boxWidth = showSkinsMenu ? 500 : 260;
             int boxHeight = showSkinsMenu ? 340 : 220;
@@ -330,16 +360,33 @@ namespace BetterMultiplayer
             menuWindowRect.width = boxWidth;
             menuWindowRect.height = boxHeight;
 
+            bool menuOpenedThisFrame = !wasMenuShownLastFrame;
+            wasMenuShownLastFrame = true;
+
+            string toggleKeyName = BetterMultiplayer.MenuToggleKeySetting != null ? BetterMultiplayer.MenuToggleKeySetting.Value.ToString() : "F10";
+            string windowTitle = $"betterMultiplayer ({toggleKeyName} / Hold LB+RB)";
+
             // Use GUI.skin.box as the style to render a solid, interactable box background that handles mouse events.
             // Pass the title directly to the window call.
-            menuWindowRect = GUI.Window(10985, menuWindowRect, DrawMenuWindow, "betterMultiplayer (F10 / Hold LB+RB)", GUI.skin.box);
+            menuWindowRect = GUI.Window(10985, menuWindowRect, DrawMenuWindow, windowTitle, GUI.skin.box);
 
-            // Focus the window to route keyboard input correctly
-            GUI.FocusWindow(10985);
+            // Focus and bring window to front to prevent races on open
+            if (menuOpenedThisFrame)
+            {
+                GUI.FocusWindow(10985);
+                GUI.BringWindowToFront(10985);
+            }
         }
 
         void DrawMenuWindow(int windowID)
         {
+            // If the window is clicked, bring it to front and focus to prevent focus loss
+            if (Event.current != null && Event.current.type == EventType.MouseDown)
+            {
+                GUI.FocusWindow(10985);
+                GUI.BringWindowToFront(10985);
+            }
+
             int boxWidth = showSkinsMenu ? 500 : 260;
             int boxHeight = showSkinsMenu ? 340 : 220;
 
