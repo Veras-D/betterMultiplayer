@@ -21,7 +21,7 @@ namespace BetterMultiplayer
             // Spells
             "fireballLevel", "quakeLevel", "screechLevel",
             // Nail
-            "nailLimit",
+            "nailSmithUpgrades",
             // HP/Soul
             "maxHealth", "maxHealthBase", "maxHealthCap", "heartPieces", "heartPieceMax",
             // Stags
