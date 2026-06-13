@@ -416,12 +416,12 @@ namespace BetterMultiplayer
     [HarmonyPatch(typeof(SceneData), "SaveMyState", new Type[] { typeof(PersistentBoolData) })]
     public static class SceneData_SaveMyState_Patch
     {
-        public static void Postfix(PersistentBoolData data)
+        public static void Postfix(PersistentBoolData persistentBoolData)
         {
-            if (data != null && data.activated && !ItemSync.isSyncing)
+            if (persistentBoolData != null && persistentBoolData.activated && !ItemSync.isSyncing)
             {
-                BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {data.id} in {data.sceneName}");
-                NetworkManager.SendPacket($"PERSIST_BOOL|{data.sceneName}|{data.id}|{data.activated}|{data.semiPersistent}");
+                BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {persistentBoolData.id} in {persistentBoolData.sceneName}");
+                NetworkManager.SendPacket($"PERSIST_BOOL|{persistentBoolData.sceneName}|{persistentBoolData.id}|{persistentBoolData.activated}|{persistentBoolData.semiPersistent}");
             }
         }
     }
