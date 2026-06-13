@@ -543,8 +543,8 @@ namespace BetterMultiplayer
         }
     }
  
-    [HarmonyPatch(typeof(tk2dSprite), "Start")]
-    public static class tk2dSprite_Start_Patch
+    [HarmonyPatch(typeof(tk2dSprite), "Awake")]
+    public static class tk2dSprite_Awake_Patch
     {
         private static MaterialPropertyBlock block;
  
