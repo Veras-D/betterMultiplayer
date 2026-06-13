@@ -120,6 +120,7 @@ namespace BetterMultiplayer
                     IsClientConnected = true;
                     BetterMultiplayer.Instance.Log("Peer connected to hosted server!");
                     SendPacket($"SKIN|{SkinManager.SelectedSkin}");
+                    MainThreadDispatcher.Enqueue(() => ItemSync.SendAllItems());
 
                     ReadLoop();
                 }
@@ -150,6 +151,7 @@ namespace BetterMultiplayer
                 IsClientConnected = true;
                 BetterMultiplayer.Instance.Log("Connected to host server!");
                 SendPacket($"SKIN|{SkinManager.SelectedSkin}");
+                MainThreadDispatcher.Enqueue(() => ItemSync.SendAllItems());
 
                 ReadLoop();
             }

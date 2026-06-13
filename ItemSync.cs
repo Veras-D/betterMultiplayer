@@ -15,7 +15,7 @@ namespace BetterMultiplayer
         private static readonly HashSet<string> Whitelist = new HashSet<string>()
         {
             // Abilities
-            "hasDash", "canDash", "hasWallJump", "canWallJump", "hasDoubleJump", "hasSuperDash", "canSuperDash", "hasAcidArmour", 
+            "hasDash", "canDash", "hasWalljump", "canWallJump", "hasDoubleJump", "hasSuperDash", "canSuperDash", "hasAcidArmour", 
             "hasDreamNail", "dreamNailUpgraded", "hasShadowDash", "canShadowDash", "hasWaterSwim", "hasLantern",
             "hasCyclone", "hasGreatSlash", "hasDashSlash", "canOvercharm",
             // Spells
@@ -80,6 +80,31 @@ namespace BetterMultiplayer
 
         public static void Update()
         {
+            // Self-heal any broken ability states locally
+            if (PlayerData.instance != null)
+            {
+                if (PlayerData.instance.hasDash && !PlayerData.instance.canDash)
+                {
+                    PlayerData.instance.canDash = true;
+                    BetterMultiplayer.Instance.Log("Self-healing: Fixed hasDash = true but canDash = false.");
+                }
+                if (PlayerData.instance.hasWalljump && !PlayerData.instance.canWallJump)
+                {
+                    PlayerData.instance.canWallJump = true;
+                    BetterMultiplayer.Instance.Log("Self-healing: Fixed hasWalljump = true but canWallJump = false.");
+                }
+                if (PlayerData.instance.hasSuperDash && !PlayerData.instance.canSuperDash)
+                {
+                    PlayerData.instance.canSuperDash = true;
+                    BetterMultiplayer.Instance.Log("Self-healing: Fixed hasSuperDash = true but canSuperDash = false.");
+                }
+                if (PlayerData.instance.hasShadowDash && !PlayerData.instance.canShadowDash)
+                {
+                    PlayerData.instance.canShadowDash = true;
+                    BetterMultiplayer.Instance.Log("Self-healing: Fixed hasShadowDash = true but canShadowDash = false.");
+                }
+            }
+
             if (UnityEngine.Time.unscaledTime - lastPollTime >= PollInterval)
             {
                 lastPollTime = UnityEngine.Time.unscaledTime;
