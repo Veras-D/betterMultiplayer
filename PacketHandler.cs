@@ -30,12 +30,25 @@ namespace BetterMultiplayer
                         normY = float.Parse(parts[7], CultureInfo.InvariantCulture);
                     }
 
+                    int remoteHealth = 5;
+                    int remoteMaxHealth = 5;
+                    int remoteHealthBlue = 0;
+                    if (parts.Length >= 11)
+                    {
+                        remoteHealth = int.Parse(parts[8]);
+                        remoteMaxHealth = int.Parse(parts[9]);
+                        remoteHealthBlue = int.Parse(parts[10]);
+                    }
+
                     string localScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
                     bool partnerJustEntered = (remoteScene == localScene) && (NetworkManager.RemoteSceneName != localScene);
 
                     NetworkManager.RemoteSceneName = remoteScene;
                     NetworkManager.RemoteNormX = normX;
                     NetworkManager.RemoteNormY = normY;
+                    NetworkManager.RemoteHealth = remoteHealth;
+                    NetworkManager.RemoteMaxHealth = remoteMaxHealth;
+                    NetworkManager.RemoteHealthBlue = remoteHealthBlue;
 
                     if (partnerJustEntered)
                     {

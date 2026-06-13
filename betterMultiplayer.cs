@@ -55,6 +55,7 @@ namespace BetterMultiplayer
                     managerGo = new GameObject("betterMultiplayerManager");
                     managerGo.AddComponent<MainThreadDispatcher>();
                     managerGo.AddComponent<BetterMultiplayerMenu>();
+                    managerGo.AddComponent<PartnerHealthDisplay>();
                     UnityEngine.Object.DontDestroyOnLoad(managerGo);
                 }
                 catch (Exception ex)
@@ -211,7 +212,11 @@ namespace BetterMultiplayer
                     normY = pos.y / GameManager.instance.sceneHeight;
                 }
 
-                string packet = $"POS|{sceneName}|{pos.x.ToString("F3", CultureInfo.InvariantCulture)}|{pos.y.ToString("F3", CultureInfo.InvariantCulture)}|{scaleX.ToString("F2", CultureInfo.InvariantCulture)}|{animName}|{normX.ToString("F4", CultureInfo.InvariantCulture)}|{normY.ToString("F4", CultureInfo.InvariantCulture)}";
+                int health = PlayerData.instance != null ? PlayerData.instance.health : 5;
+                int maxHealth = PlayerData.instance != null ? PlayerData.instance.maxHealth : 5;
+                int healthBlue = PlayerData.instance != null ? PlayerData.instance.healthBlue : 0;
+
+                string packet = $"POS|{sceneName}|{pos.x.ToString("F3", CultureInfo.InvariantCulture)}|{pos.y.ToString("F3", CultureInfo.InvariantCulture)}|{scaleX.ToString("F2", CultureInfo.InvariantCulture)}|{animName}|{normX.ToString("F4", CultureInfo.InvariantCulture)}|{normY.ToString("F4", CultureInfo.InvariantCulture)}|{health}|{maxHealth}|{healthBlue}";
                 NetworkManager.SendPacket(packet);
             }
             catch (Exception ex)

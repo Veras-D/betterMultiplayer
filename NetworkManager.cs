@@ -14,6 +14,9 @@ namespace BetterMultiplayer
         public static string RemoteSceneName { get; set; } = "Unknown";
         public static float RemoteNormX { get; set; } = 0f;
         public static float RemoteNormY { get; set; } = 0f;
+        public static int RemoteHealth { get; set; } = 5;
+        public static int RemoteMaxHealth { get; set; } = 5;
+        public static int RemoteHealthBlue { get; set; } = 0;
 
         private static TcpListener listener;
         private static TcpClient client;
