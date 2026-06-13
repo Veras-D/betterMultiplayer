@@ -152,11 +152,13 @@ namespace BetterMultiplayer
 
         private void OnMenuSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
         {
+            BetterMultiplayer.Instance.Log($"OnMenuSceneLoaded triggered: Scene name is '{scene.name}'");
             localAnimatorCache = null;
             // Auto-show menu on Title screen so players can configure it easily
             if (scene.name == "Menu_Title")
             {
                 showMenu = true;
+                BetterMultiplayer.Instance.Log("Auto-showed menu on Menu_Title");
             }
         }
 
@@ -205,6 +207,7 @@ namespace BetterMultiplayer
             if (f10Pressed)
             {
                 showMenu = !showMenu;
+                BetterMultiplayer.Instance.Log($"Toggled menu via F10. showMenu is now: {showMenu}");
             }
 
             // Controller toggle: Hold LB + RB (joystick bumpers) for 1 second
@@ -231,6 +234,7 @@ namespace BetterMultiplayer
                 {
                     showMenu = !showMenu;
                     bumperToggled = true;
+                    BetterMultiplayer.Instance.Log($"Toggled menu via controller bumpers. showMenu is now: {showMenu}");
                 }
             }
             else
@@ -317,8 +321,9 @@ namespace BetterMultiplayer
             menuWindowRect.width = boxWidth;
             menuWindowRect.height = boxHeight;
 
-            // Use GUIStyle.none to keep the exact original look and position (static at 10, 10)
-            menuWindowRect = GUI.Window(10985, menuWindowRect, DrawMenuWindow, "", GUIStyle.none);
+            // Use GUI.skin.box as the style to render a solid, interactable box background that handles mouse events.
+            // Pass the title directly to the window call.
+            menuWindowRect = GUI.Window(10985, menuWindowRect, DrawMenuWindow, "betterMultiplayer (F10 / Hold LB+RB)", GUI.skin.box);
 
             // Focus the window to route keyboard input correctly
             GUI.FocusWindow(10985);
@@ -328,7 +333,6 @@ namespace BetterMultiplayer
         {
             int boxWidth = showSkinsMenu ? 500 : 260;
             int boxHeight = showSkinsMenu ? 340 : 220;
-            GUI.Box(new Rect(0, 0, boxWidth, boxHeight), "betterMultiplayer (F10 / Hold LB+RB)");
 
             if (showSkinsMenu)
             {
