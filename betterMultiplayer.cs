@@ -1,4 +1,5 @@
 using BepInEx;
+using BepInEx.Configuration;
 using HarmonyLib;
 using System;
 using System.Globalization;
@@ -10,6 +11,7 @@ namespace BetterMultiplayer
     public class BetterMultiplayer : BaseUnityPlugin
     {
         public static BetterMultiplayer Instance { get; private set; }
+        public static ConfigEntry<string> ActiveSkinSetting;
 
         private static GameObject managerGo;
 
@@ -24,6 +26,18 @@ namespace BetterMultiplayer
                 ItemSync.Initialize();
                 EnemySync.Initialize();
                 SkinManager.Initialize();
+
+                ActiveSkinSetting = Config.Bind(
+                    "Skins",
+                    "ActiveSkin",
+                    "Default",
+                    "The custom skin to load automatically on startup."
+                );
+
+                if (ActiveSkinSetting.Value != "Default")
+                {
+                    SkinManager.ApplyLocalSkin(ActiveSkinSetting.Value);
+                }
 
                 // Apply Harmony patches
                 var harmony = new Harmony("com.antigravity.bettermultiplayer");
@@ -276,6 +290,10 @@ namespace BetterMultiplayer
                         if (SkinManager.ApplyLocalSkin(skinName))
                         {
                             skinWarning = "";
+                            if (BetterMultiplayer.ActiveSkinSetting != null)
+                            {
+                                BetterMultiplayer.ActiveSkinSetting.Value = skinName;
+                            }
                         }
                         else
                         {
