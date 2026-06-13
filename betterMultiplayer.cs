@@ -138,6 +138,8 @@ namespace BetterMultiplayer
             }
         }
 
+        private bool wasControlRelinquished = false;
+
         void Start()
         {
             UnityEngine.SceneManagement.SceneManager.sceneLoaded += OnMenuSceneLoaded;
@@ -146,6 +148,36 @@ namespace BetterMultiplayer
         void OnDestroy()
         {
             UnityEngine.SceneManagement.SceneManager.sceneLoaded -= OnMenuSceneLoaded;
+            if (wasControlRelinquished && HeroController.instance != null)
+            {
+                try
+                {
+                    HeroController.instance.RegainControl();
+                }
+                catch {}
+            }
+        }
+
+        private void UpdateControlState()
+        {
+            if (HeroController.instance == null) return;
+
+            if (showMenu)
+            {
+                if (!wasControlRelinquished)
+                {
+                    HeroController.instance.RelinquishControl();
+                    wasControlRelinquished = true;
+                }
+            }
+            else
+            {
+                if (wasControlRelinquished)
+                {
+                    HeroController.instance.RegainControl();
+                    wasControlRelinquished = false;
+                }
+            }
         }
 
         private void OnMenuSceneLoaded(UnityEngine.SceneManagement.Scene scene, UnityEngine.SceneManagement.LoadSceneMode mode)
@@ -164,6 +196,11 @@ namespace BetterMultiplayer
             if (Input.GetKeyDown(KeyCode.F10) || Input.GetKeyDown(KeyCode.F9) || Input.GetKeyDown(KeyCode.BackQuote) || Input.GetKeyDown(KeyCode.Insert))
             {
                 showMenu = !showMenu;
+                if (!showMenu)
+                {
+                    Cursor.visible = false;
+                    Cursor.lockState = CursorLockMode.Locked;
+                }
             }
 
             // Controller toggle: Hold LB + RB (joystick buttons 4 and 5) for 1 second
@@ -175,12 +212,25 @@ namespace BetterMultiplayer
                 {
                     showMenu = !showMenu;
                     bumperToggled = true;
+                    if (!showMenu)
+                    {
+                        Cursor.visible = false;
+                        Cursor.lockState = CursorLockMode.Locked;
+                    }
                 }
             }
             else
             {
                 bumperPressTimer = 0f;
                 bumperToggled = false;
+            }
+
+            // Manage input and cursor state when menu is open
+            UpdateControlState();
+            if (showMenu)
+            {
+                Cursor.visible = true;
+                Cursor.lockState = CursorLockMode.None;
             }
 
             // Periodically send position if connected
