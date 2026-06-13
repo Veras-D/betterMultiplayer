@@ -60,7 +60,12 @@ namespace BetterMultiplayer
             // Dream nail essence
             "dreamOrbs", "dreamOrbsSpent", "hasDreamGate",
             // Grimm troupe
-            "grimmChildLevel", "gotGrimmNotch"
+            "grimmChildLevel", "gotGrimmNotch",
+            // Shop Inventory (Sly & Salubra purchases)
+            "slyShellFrag1", "slyShellFrag2", "slyShellFrag3", "slyShellFrag4",
+            "slyVesselFrag1", "slyVesselFrag2", "slyVesselFrag3", "slyVesselFrag4",
+            "slyNotch1", "slyNotch2", "slySimpleKey", "slyRancidEgg", "gotSlyCharm",
+            "salubraNotch1", "salubraNotch2", "salubraNotch3", "salubraNotch4", "salubraBlessing"
         };
 
         static ItemSync()
