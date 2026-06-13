@@ -121,6 +121,10 @@ namespace BetterMultiplayer
                 LocalShadeTexture = LoadExtraTexture(skinName, "Shade.png") ?? LoadExtraTexture(skinName, "shade.png");
 
                 BetterMultiplayer.Instance.Log($"Successfully applied local skin: {skinName}");
+                if (CharmIconList.Instance != null)
+                {
+                    ApplyCharmSkins(CharmIconList.Instance);
+                }
                 if (NetworkManager.IsClientConnected)
                 {
                     NetworkManager.SendPacket($"SKIN|{skinName}");
@@ -541,6 +545,202 @@ namespace BetterMultiplayer
                 ReskinHUDRecursive(parent.GetChild(i));
             }
         }
+
+        private static Sprite[] originalSpriteList;
+        private static Sprite originalUnbreakableHeart;
+        private static Sprite originalUnbreakableGreed;
+        private static Sprite originalUnbreakableStrength;
+        private static Sprite originalGrimmchildLevel1;
+        private static Sprite originalGrimmchildLevel2;
+        private static Sprite originalGrimmchildLevel3;
+        private static Sprite originalGrimmchildLevel4;
+        private static Sprite originalNymmCharm;
+        private static bool backupsSaved = false;
+
+        public static void ApplyCharmSkins(CharmIconList list)
+        {
+            if (list == null) return;
+
+            try
+            {
+                // 1. Save backups if not already saved
+                if (!backupsSaved)
+                {
+                    if (list.spriteList != null)
+                    {
+                        originalSpriteList = (Sprite[])list.spriteList.Clone();
+                    }
+                    originalUnbreakableHeart = list.unbreakableHeart;
+                    originalUnbreakableGreed = list.unbreakableGreed;
+                    originalUnbreakableStrength = list.unbreakableStrength;
+                    originalGrimmchildLevel1 = list.grimmchildLevel1;
+                    originalGrimmchildLevel2 = list.grimmchildLevel2;
+                    originalGrimmchildLevel3 = list.grimmchildLevel3;
+                    originalGrimmchildLevel4 = list.grimmchildLevel4;
+                    originalNymmCharm = list.nymmCharm;
+                    backupsSaved = true;
+                }
+
+                // 2. Always restore vanilla backups first so we start with a clean slate
+                if (originalSpriteList != null && list.spriteList != null)
+                {
+                    Array.Copy(originalSpriteList, list.spriteList, Math.Min(originalSpriteList.Length, list.spriteList.Length));
+                }
+                list.unbreakableHeart = originalUnbreakableHeart;
+                list.unbreakableGreed = originalUnbreakableGreed;
+                list.unbreakableStrength = originalUnbreakableStrength;
+                list.grimmchildLevel1 = originalGrimmchildLevel1;
+                list.grimmchildLevel2 = originalGrimmchildLevel2;
+                list.grimmchildLevel3 = originalGrimmchildLevel3;
+                list.grimmchildLevel4 = originalGrimmchildLevel4;
+                list.nymmCharm = originalNymmCharm;
+
+                if (SelectedSkin == "Default")
+                {
+                    return;
+                }
+
+                // 3. Scan directory and Charms/ subdirectory for custom charm textures
+                string skinPath = Path.Combine(skinsDir, SelectedSkin);
+                List<string> charmFiles = new List<string>();
+
+                // Check skin root directory
+                if (Directory.Exists(skinPath))
+                {
+                    foreach (var file in Directory.GetFiles(skinPath, "*.png"))
+                    {
+                        string name = Path.GetFileName(file);
+                        if (name.StartsWith("Charm_", StringComparison.OrdinalIgnoreCase))
+                        {
+                            charmFiles.Add(file);
+                        }
+                    }
+
+                    // Check charms subdirectory
+                    string charmsSubDir = Path.Combine(skinPath, "Charms");
+                    if (Directory.Exists(charmsSubDir))
+                    {
+                        foreach (var file in Directory.GetFiles(charmsSubDir, "*.png"))
+                        {
+                            string name = Path.GetFileName(file);
+                            if (name.StartsWith("Charm_", StringComparison.OrdinalIgnoreCase))
+                            {
+                                charmFiles.Add(file);
+                            }
+                        }
+                    }
+                }
+
+                // 4. Apply each custom charm sprite
+                foreach (var file in charmFiles)
+                {
+                    string filename = Path.GetFileNameWithoutExtension(file); // e.g. "Charm_23_Unbreakable"
+                    Texture2D tex = LoadTexture(file);
+                    if (tex == null) continue;
+
+                    Sprite customSprite = Sprite.Create(tex, new Rect(0f, 0f, tex.width, tex.height), new Vector2(0.5f, 0.5f), 100f);
+
+                    string content = filename.Substring(6); // Remove "Charm_" prefix -> "23_Unbreakable"
+                    
+                    // Parse number part
+                    int numEnd = 0;
+                    while (numEnd < content.Length && char.IsDigit(content[numEnd]))
+                    {
+                        numEnd++;
+                    }
+
+                    if (numEnd > 0)
+                    {
+                        string idStr = content.Substring(0, numEnd);
+                        int charmId = int.Parse(idStr);
+                        string suffix = content.Substring(numEnd).Trim('_').ToLower();
+
+                        // Map standard and special charm fields
+                        if (charmId == 23)
+                        {
+                            if (suffix == "unbreakable")
+                            {
+                                list.unbreakableHeart = customSprite;
+                            }
+                            else
+                            {
+                                ApplyToSpriteList(list, 23, customSprite);
+                            }
+                        }
+                        else if (charmId == 24)
+                        {
+                            if (suffix == "unbreakable")
+                            {
+                                list.unbreakableGreed = customSprite;
+                            }
+                            else
+                            {
+                                ApplyToSpriteList(list, 24, customSprite);
+                            }
+                        }
+                        else if (charmId == 25)
+                        {
+                            if (suffix == "unbreakable")
+                            {
+                                list.unbreakableStrength = customSprite;
+                            }
+                            else
+                            {
+                                ApplyToSpriteList(list, 25, customSprite);
+                            }
+                        }
+                        else if (charmId == 39)
+                        {
+                            list.nymmCharm = customSprite;
+                            ApplyToSpriteList(list, 39, customSprite);
+                        }
+                        else if (charmId == 40)
+                        {
+                            if (suffix == "2" || suffix == "level2")
+                            {
+                                list.grimmchildLevel2 = customSprite;
+                            }
+                            else if (suffix == "3" || suffix == "level3")
+                            {
+                                list.grimmchildLevel3 = customSprite;
+                            }
+                            else if (suffix == "4" || suffix == "level4")
+                            {
+                                list.grimmchildLevel4 = customSprite;
+                            }
+                            else
+                            {
+                                list.grimmchildLevel1 = customSprite;
+                                ApplyToSpriteList(list, 40, customSprite);
+                            }
+                        }
+                        else
+                        {
+                            ApplyToSpriteList(list, charmId, customSprite);
+                        }
+                    }
+                }
+
+                BetterMultiplayer.Instance.Log($"Applied custom charm skins for skin: {SelectedSkin}");
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in ApplyCharmSkins: " + ex);
+            }
+        }
+
+        private static void ApplyToSpriteList(CharmIconList list, int id, Sprite customSprite)
+        {
+            if (list.spriteList == null) return;
+            if (id >= 0 && id < list.spriteList.Length)
+            {
+                list.spriteList[id] = customSprite;
+            }
+            else if (id - 1 >= 0 && id - 1 < list.spriteList.Length)
+            {
+                list.spriteList[id - 1] = customSprite;
+            }
+        }
     }
  
     [HarmonyPatch(typeof(tk2dSprite), "Awake")]
@@ -635,6 +835,23 @@ namespace BetterMultiplayer
                 renderer.GetPropertyBlock(block);
                 block.SetTexture("_MainTex", tex);
                 renderer.SetPropertyBlock(block);
+            }
+        }
+
+    }
+
+    [HarmonyPatch(typeof(CharmIconList), "Start")]
+    public static class CharmIconList_Start_Patch
+    {
+        public static void Postfix(CharmIconList __instance)
+        {
+            try
+            {
+                SkinManager.ApplyCharmSkins(__instance);
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in CharmIconList Start Patch: " + ex);
             }
         }
     }
