@@ -14,6 +14,21 @@ namespace BetterMultiplayer
         // Cleared on every scene transition to prevent memory leaks.
         private static readonly Dictionary<HealthManager, string> enemyIds = new Dictionary<HealthManager, string>();
 
+        // Remote Shade state variables
+        public static string RemoteShadeScene = "None";
+        public static float RemoteShadeX = 0f;
+        public static float RemoteShadeY = 0f;
+        public static int RemoteShadeGeo = 0;
+        public static bool RemoteSoulLimited = false;
+        public static GameObject RemoteShadeInstance = null;
+
+        // Local Shade change detection cache
+        private static string lastShadeScene = "None";
+        private static float lastShadeX = 0f;
+        private static float lastShadeY = 0f;
+        private static int lastGeoPool = 0;
+        private static bool lastSoulLimited = false;
+
         public static void Initialize()
         {
             // Listen for scene transitions to clear references using Unity's native SceneManager
@@ -27,10 +42,171 @@ namespace BetterMultiplayer
             try
             {
                 enemyIds.Clear();
+                RemoteShadeInstance = null;
+                UpdateRemoteShadeSpawning();
             }
             catch (Exception ex)
             {
                 BetterMultiplayer.Instance.LogError("Error clearing enemy IDs on scene change: " + ex);
+            }
+        }
+
+        public static void SendLocalShadeState(bool force = false)
+        {
+            if (PlayerData.instance == null || !NetworkManager.IsClientConnected) return;
+
+            try
+            {
+                string currentScene = PlayerData.instance.GetString("shadeScene");
+                float currentX = PlayerData.instance.GetFloat("shadePositionX");
+                float currentY = PlayerData.instance.GetFloat("shadePositionY");
+                int currentGeo = PlayerData.instance.GetInt("geoPool");
+                bool currentLimited = PlayerData.instance.GetBool("soulLimited");
+
+                if (force || 
+                    currentScene != lastShadeScene || 
+                    Mathf.Abs(currentX - lastShadeX) > 0.01f || 
+                    Mathf.Abs(currentY - lastShadeY) > 0.01f || 
+                    currentGeo != lastGeoPool || 
+                    currentLimited != lastSoulLimited)
+                {
+                    lastShadeScene = currentScene;
+                    lastShadeX = currentX;
+                    lastShadeY = currentY;
+                    lastGeoPool = currentGeo;
+                    lastSoulLimited = currentLimited;
+
+                    NetworkManager.SendPacket($"SHADE_STATE|{currentScene}|{currentX.ToString("F3", CultureInfo.InvariantCulture)}|{currentY.ToString("F3", CultureInfo.InvariantCulture)}|{currentGeo}|{currentLimited}");
+                }
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in SendLocalShadeState: " + ex);
+            }
+        }
+
+        public static void HandleRemoteShadeState(string scene, float x, float y, int geo, bool limited)
+        {
+            RemoteShadeScene = scene;
+            RemoteShadeX = x;
+            RemoteShadeY = y;
+            RemoteShadeGeo = geo;
+            RemoteSoulLimited = limited;
+
+            BetterMultiplayer.Instance.Log($"[ShadeSync] Received remote shade state: scene={scene}, x={x}, y={y}, geo={geo}, limited={limited}");
+
+            UpdateRemoteShadeSpawning();
+        }
+
+        public static void UpdateRemoteShadeSpawning()
+        {
+            try
+            {
+                if (PlayerData.instance == null) return;
+
+                string activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+                bool shouldBeSpawned = (RemoteShadeScene != "None" && !string.IsNullOrEmpty(RemoteShadeScene) && RemoteShadeScene == activeScene && RemoteSoulLimited);
+
+                if (shouldBeSpawned)
+                {
+                    if (RemoteShadeInstance == null)
+                    {
+                        SpawnRemoteShade();
+                    }
+                }
+                else
+                {
+                    if (RemoteShadeInstance != null)
+                    {
+                        BetterMultiplayer.Instance.Log("[ShadeSync] Destroying remote shade instance.");
+                        UnityEngine.Object.Destroy(RemoteShadeInstance);
+                        RemoteShadeInstance = null;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in UpdateRemoteShadeSpawning: " + ex);
+            }
+        }
+
+        private static void SpawnRemoteShade()
+        {
+            try
+            {
+                BetterMultiplayer.Instance.Log($"[ShadeSync] Spawning remote shade at ({RemoteShadeX}, {RemoteShadeY})");
+
+                var sm = UnityEngine.Object.FindObjectOfType<SceneManager>();
+                if (sm == null)
+                {
+                    BetterMultiplayer.Instance.LogError("Cannot spawn remote shade: SceneManager not found in scene.");
+                    return;
+                }
+
+                GameObject prefab = sm.hollowShadeObject;
+                if (prefab == null)
+                {
+                    BetterMultiplayer.Instance.LogError("Cannot spawn remote shade: hollowShadeObject prefab in SceneManager is null.");
+                    return;
+                }
+
+                RemoteShadeInstance = UnityEngine.Object.Instantiate(prefab, new Vector3(RemoteShadeX, RemoteShadeY, 0f), Quaternion.identity);
+                RemoteShadeInstance.name = "Remote_Hollow Shade";
+
+                foreach (var fsm in RemoteShadeInstance.GetComponents<PlayMakerFSM>())
+                {
+                    UnityEngine.Object.Destroy(fsm);
+                }
+
+                HealthManager hm = RemoteShadeInstance.GetComponent<HealthManager>();
+                if (hm != null)
+                {
+                    string id = $"{RemoteShadeScene}@Remote_Hollow Shade@{RemoteShadeX.ToString("F1", CultureInfo.InvariantCulture)}@{RemoteShadeY.ToString("F1", CultureInfo.InvariantCulture)}";
+                    enemyIds[hm] = id;
+                    BetterMultiplayer.Instance.Log($"Registered remote shade HealthManager with ID: {id}");
+                }
+                else
+                {
+                    BetterMultiplayer.Instance.LogError("Spawned remote shade but it has no HealthManager component.");
+                }
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error spawning remote shade: " + ex);
+            }
+        }
+
+        public static void RecoverLocalShade()
+        {
+            try
+            {
+                if (PlayerData.instance == null) return;
+
+                int geoToRestore = PlayerData.instance.GetInt("geoPool");
+                BetterMultiplayer.Instance.Log($"[ShadeSync] Recovering local shade. Restoring {geoToRestore} Geo.");
+
+                if (geoToRestore > 0)
+                {
+                    int currentGeo = PlayerData.instance.GetInt("geo");
+                    PlayerData.instance.SetInt("geo", currentGeo + geoToRestore);
+                    PlayerData.instance.SetInt("geoPool", 0);
+                }
+
+                PlayerData.instance.SetBool("soulLimited", false);
+                PlayerData.instance.SetString("shadeScene", "None");
+
+                if (HeroController.instance != null)
+                {
+                    HeroController.instance.CharmUpdate();
+                    HeroController.instance.MaxHealthKeepBlue();
+                }
+
+                PlayMakerFSM.BroadcastEvent("CHARM UPDATE");
+                PlayMakerFSM.BroadcastEvent("MAX HEALTH UPDATE");
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in RecoverLocalShade: " + ex);
             }
         }
 
@@ -133,6 +309,12 @@ namespace BetterMultiplayer
                 {
                     isSyncingEnemy = true;
                     enemy.Die(attackDirection, attackType, ignoreEvasion);
+                }
+
+                // If it is the Hollow Shade that died, ensure local player recovers their Shade state
+                if (enemyId.Contains("Hollow Shade"))
+                {
+                    RecoverLocalShade();
                 }
             }
             catch (Exception ex)

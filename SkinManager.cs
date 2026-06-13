@@ -20,7 +20,8 @@ namespace BetterMultiplayer
         public static Texture2D LocalWraithsTexture { get; private set; }
         public static Texture2D LocalShriekTexture { get; private set; }
         public static Texture2D LocalOrbFullTexture { get; private set; }
-
+        public static Texture2D LocalShadeTexture { get; private set; }
+ 
         public static Texture2D RemoteCloakTexture { get; private set; }
         public static Texture2D RemoteVSTexture { get; private set; }
         public static Texture2D RemoteWingsTexture { get; private set; }
@@ -28,6 +29,7 @@ namespace BetterMultiplayer
         public static Texture2D RemoteVoidSpellsTexture { get; private set; }
         public static Texture2D RemoteWraithsTexture { get; private set; }
         public static Texture2D RemoteShriekTexture { get; private set; }
+        public static Texture2D RemoteShadeTexture { get; private set; }
 
         private static string skinsDir;
         private static List<string> availableSkins = new List<string>();
@@ -116,6 +118,7 @@ namespace BetterMultiplayer
                 LocalWraithsTexture = LoadExtraTexture(skinName, "Wraiths.png") ?? LoadExtraTexture(skinName, "wraiths.png");
                 LocalShriekTexture = LoadExtraTexture(skinName, "Shriek.png") ?? LoadExtraTexture(skinName, "shriek.png");
                 LocalOrbFullTexture = LoadExtraTexture(skinName, "OrbFull.png") ?? LoadExtraTexture(skinName, "orbFull.png");
+                LocalShadeTexture = LoadExtraTexture(skinName, "Shade.png") ?? LoadExtraTexture(skinName, "shade.png");
 
                 BetterMultiplayer.Instance.Log($"Successfully applied local skin: {skinName}");
                 if (NetworkManager.IsClientConnected)
@@ -143,6 +146,7 @@ namespace BetterMultiplayer
                 Texture2D voidSpells = null;
                 Texture2D wraiths = null;
                 Texture2D shriek = null;
+                Texture2D shade = null;
 
                 if (skinName != "Default")
                 {
@@ -159,6 +163,7 @@ namespace BetterMultiplayer
                     voidSpells = LoadExtraTexture(skinName, "VoidSpells.png") ?? LoadExtraTexture(skinName, "voidSpells.png");
                     wraiths = LoadExtraTexture(skinName, "Wraiths.png") ?? LoadExtraTexture(skinName, "wraiths.png");
                     shriek = LoadExtraTexture(skinName, "Shriek.png") ?? LoadExtraTexture(skinName, "shriek.png");
+                    shade = LoadExtraTexture(skinName, "Shade.png") ?? LoadExtraTexture(skinName, "shade.png");
                 }
 
                 RemoteSkinTexture = tex;
@@ -169,6 +174,7 @@ namespace BetterMultiplayer
                 RemoteVoidSpellsTexture = voidSpells;
                 RemoteWraithsTexture = wraiths;
                 RemoteShriekTexture = shriek;
+                RemoteShadeTexture = shade;
 
                 BetterMultiplayer.Instance.Log($"Loaded skin for partner: {skinName}");
             }
@@ -178,63 +184,133 @@ namespace BetterMultiplayer
             }
         }
 
+        private static string lastHUDScene = "";
+        private static MeshRenderer localMeshRenderer;
+        private static MeshRenderer remoteMeshRenderer;
+        private static MeshRenderer localCloakRenderer;
+        private static MeshRenderer remoteCloakRenderer;
+
+        private static MeshRenderer GetLocalMeshRenderer()
+        {
+            if (localMeshRenderer == null && HeroController.instance != null)
+            {
+                var sprite = HeroController.instance.GetComponentInChildren<tk2dSprite>();
+                if (sprite != null)
+                {
+                    localMeshRenderer = sprite.GetComponent<MeshRenderer>();
+                }
+            }
+            return localMeshRenderer;
+        }
+
+        private static MeshRenderer GetRemoteMeshRenderer()
+        {
+            if (remoteMeshRenderer == null && NetworkManager.puppet != null)
+            {
+                var sprite = NetworkManager.puppet.GetComponentInChildren<tk2dSprite>();
+                if (sprite != null)
+                {
+                    remoteMeshRenderer = sprite.GetComponent<MeshRenderer>();
+                }
+            }
+            return remoteMeshRenderer;
+        }
+
+        private static MeshRenderer GetLocalCloakRenderer()
+        {
+            if (localCloakRenderer == null && HeroController.instance != null)
+            {
+                Transform cloakTransform = HeroController.instance.transform.Find("Cloak");
+                if (cloakTransform != null)
+                {
+                    localCloakRenderer = cloakTransform.GetComponent<MeshRenderer>();
+                }
+            }
+            return localCloakRenderer;
+        }
+
+        private static MeshRenderer GetRemoteCloakRenderer()
+        {
+            if (remoteCloakRenderer == null && NetworkManager.puppet != null)
+            {
+                Transform cloakTransform = NetworkManager.puppet.transform.Find("Cloak");
+                if (cloakTransform != null)
+                {
+                    remoteCloakRenderer = cloakTransform.GetComponent<MeshRenderer>();
+                }
+            }
+            return remoteCloakRenderer;
+        }
+
         public static void UpdateSkins()
         {
             try
             {
-                // Update cloak and HUD
-                UpdateCloakSkin();
-                UpdateHUDSkin();
-
-                if (HeroController.instance != null)
+                string activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+                if (activeScene != lastHUDScene)
                 {
-                    var sprite = HeroController.instance.GetComponentInChildren<tk2dSprite>();
-                    if (sprite != null)
+                    lastHUDScene = activeScene;
+                    // Reset cached renderers on scene change
+                    localMeshRenderer = null;
+                    remoteMeshRenderer = null;
+                    localCloakRenderer = null;
+                    remoteCloakRenderer = null;
+                    UpdateHUDSkin();
+                }
+
+                var lCloak = GetLocalCloakRenderer();
+                if (lCloak != null && LocalCloakTexture != null)
+                {
+                    if (cloakBlock == null) cloakBlock = new MaterialPropertyBlock();
+                    lCloak.GetPropertyBlock(cloakBlock);
+                    if (cloakBlock.GetTexture("_MainTex") != LocalCloakTexture)
                     {
-                        var renderer = sprite.GetComponent<MeshRenderer>();
-                        if (renderer != null)
-                        {
-                            if (LocalSkinTexture != null)
-                            {
-                                if (localBlock == null)
-                                {
-                                    localBlock = new MaterialPropertyBlock();
-                                }
-                                renderer.GetPropertyBlock(localBlock);
-                                localBlock.SetTexture("_MainTex", LocalSkinTexture);
-                                renderer.SetPropertyBlock(localBlock);
-                            }
-                            else
-                            {
-                                renderer.SetPropertyBlock(null);
-                            }
-                        }
+                        cloakBlock.SetTexture("_MainTex", LocalCloakTexture);
+                        lCloak.SetPropertyBlock(cloakBlock);
                     }
                 }
 
-                if (NetworkManager.puppet != null)
+                var rCloak = GetRemoteCloakRenderer();
+                if (rCloak != null && RemoteCloakTexture != null)
                 {
-                    var sprite = NetworkManager.puppet.GetComponentInChildren<tk2dSprite>();
-                    if (sprite != null)
+                    if (remoteCloakBlock == null) remoteCloakBlock = new MaterialPropertyBlock();
+                    rCloak.GetPropertyBlock(remoteCloakBlock);
+                    if (remoteCloakBlock.GetTexture("_MainTex") != RemoteCloakTexture)
                     {
-                        var renderer = sprite.GetComponent<MeshRenderer>();
-                        if (renderer != null)
-                        {
-                            if (RemoteSkinTexture != null)
-                            {
-                                if (remoteBlock == null)
-                                {
-                                    remoteBlock = new MaterialPropertyBlock();
-                                }
-                                renderer.GetPropertyBlock(remoteBlock);
-                                remoteBlock.SetTexture("_MainTex", RemoteSkinTexture);
-                                renderer.SetPropertyBlock(remoteBlock);
-                            }
-                            else
-                            {
-                                renderer.SetPropertyBlock(null);
-                            }
-                        }
+                        remoteCloakBlock.SetTexture("_MainTex", RemoteCloakTexture);
+                        rCloak.SetPropertyBlock(remoteCloakBlock);
+                    }
+                }
+
+                var lMesh = GetLocalMeshRenderer();
+                if (lMesh != null)
+                {
+                    if (LocalSkinTexture != null)
+                    {
+                        if (localBlock == null) localBlock = new MaterialPropertyBlock();
+                        lMesh.GetPropertyBlock(localBlock);
+                        localBlock.SetTexture("_MainTex", LocalSkinTexture);
+                        lMesh.SetPropertyBlock(localBlock);
+                    }
+                    else
+                    {
+                        lMesh.SetPropertyBlock(null);
+                    }
+                }
+
+                var rMesh = GetRemoteMeshRenderer();
+                if (rMesh != null)
+                {
+                    if (RemoteSkinTexture != null)
+                    {
+                        if (remoteBlock == null) remoteBlock = new MaterialPropertyBlock();
+                        rMesh.GetPropertyBlock(remoteBlock);
+                        remoteBlock.SetTexture("_MainTex", RemoteSkinTexture);
+                        rMesh.SetPropertyBlock(remoteBlock);
+                    }
+                    else
+                    {
+                        rMesh.SetPropertyBlock(null);
                     }
                 }
             }
@@ -374,50 +450,22 @@ namespace BetterMultiplayer
  
         public static void UpdateCloakSkin()
         {
-            if (HeroController.instance != null)
+            var lCloak = GetLocalCloakRenderer();
+            if (lCloak != null && LocalCloakTexture != null)
             {
-                Transform cloakTransform = HeroController.instance.transform.Find("Cloak");
-                if (cloakTransform != null)
-                {
-                    var renderer = cloakTransform.GetComponent<MeshRenderer>();
-                    if (renderer != null)
-                    {
-                        if (LocalCloakTexture != null)
-                        {
-                            if (cloakBlock == null) cloakBlock = new MaterialPropertyBlock();
-                            renderer.GetPropertyBlock(cloakBlock);
-                            cloakBlock.SetTexture("_MainTex", LocalCloakTexture);
-                            renderer.SetPropertyBlock(cloakBlock);
-                        }
-                        else
-                        {
-                            renderer.SetPropertyBlock(null);
-                        }
-                    }
-                }
+                if (cloakBlock == null) cloakBlock = new MaterialPropertyBlock();
+                lCloak.GetPropertyBlock(cloakBlock);
+                cloakBlock.SetTexture("_MainTex", LocalCloakTexture);
+                lCloak.SetPropertyBlock(cloakBlock);
             }
 
-            if (NetworkManager.puppet != null)
+            var rCloak = GetRemoteCloakRenderer();
+            if (rCloak != null && RemoteCloakTexture != null)
             {
-                Transform cloakTransform = NetworkManager.puppet.transform.Find("Cloak");
-                if (cloakTransform != null)
-                {
-                    var renderer = cloakTransform.GetComponent<MeshRenderer>();
-                    if (renderer != null)
-                    {
-                        if (RemoteCloakTexture != null)
-                        {
-                            if (remoteCloakBlock == null) remoteCloakBlock = new MaterialPropertyBlock();
-                            renderer.GetPropertyBlock(remoteCloakBlock);
-                            remoteCloakBlock.SetTexture("_MainTex", RemoteCloakTexture);
-                            renderer.SetPropertyBlock(remoteCloakBlock);
-                        }
-                        else
-                        {
-                            renderer.SetPropertyBlock(null);
-                        }
-                    }
-                }
+                if (remoteCloakBlock == null) remoteCloakBlock = new MaterialPropertyBlock();
+                rCloak.GetPropertyBlock(remoteCloakBlock);
+                remoteCloakBlock.SetTexture("_MainTex", RemoteCloakTexture);
+                rCloak.SetPropertyBlock(remoteCloakBlock);
             }
         }
  
@@ -508,10 +556,14 @@ namespace BetterMultiplayer
             {
                 string name = __instance.gameObject.name;
                 bool isRemote = name.StartsWith("Remote_");
-
+ 
                 if (isRemote)
                 {
-                    if (SkinManager.RemoteVSTexture != null && 
+                    if (SkinManager.RemoteShadeTexture != null && name.Contains("Hollow Shade"))
+                    {
+                        ApplyTexture(__instance, SkinManager.RemoteShadeTexture);
+                    }
+                    else if (SkinManager.RemoteVSTexture != null && 
                         (name.Contains("Fireball") || name.Contains("Vengeful Spirit")))
                     {
                         ApplyTexture(__instance, SkinManager.RemoteVSTexture);
@@ -529,7 +581,11 @@ namespace BetterMultiplayer
                 }
                 else
                 {
-                    if (SkinManager.LocalVSTexture != null && 
+                    if (SkinManager.LocalShadeTexture != null && name.StartsWith("Hollow Shade"))
+                    {
+                        ApplyTexture(__instance, SkinManager.LocalShadeTexture);
+                    }
+                    else if (SkinManager.LocalVSTexture != null && 
                         (name.StartsWith("Fireball") || name.StartsWith("Vengeful Spirit")))
                     {
                         ApplyTexture(__instance, SkinManager.LocalVSTexture);
@@ -569,7 +625,7 @@ namespace BetterMultiplayer
                 }
             }
         }
-
+ 
         private static void ApplyTexture(tk2dSprite sprite, Texture2D tex)
         {
             var renderer = sprite.GetComponent<MeshRenderer>();

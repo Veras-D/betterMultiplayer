@@ -8,7 +8,9 @@ namespace BetterMultiplayer
     public static class ItemSync
     {
         public static bool isSyncing = false;
-        private static readonly Dictionary<string, string> localStateCache = new Dictionary<string, string>();
+        private static readonly Dictionary<string, FieldInfo> FieldCache = new Dictionary<string, FieldInfo>();
+        private static readonly Dictionary<string, bool> cachedBools = new Dictionary<string, bool>();
+        private static readonly Dictionary<string, int> cachedInts = new Dictionary<string, int>();
         private static float lastPollTime = 0f;
         private const float PollInterval = 1.0f; // Check for changes every 1 second
 
@@ -80,7 +82,21 @@ namespace BetterMultiplayer
 
         public static void Initialize()
         {
-            // Handled via Harmony auto-patching
+            foreach (var key in Whitelist)
+            {
+                try
+                {
+                    FieldInfo field = typeof(PlayerData).GetField(key, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                    if (field != null)
+                    {
+                        FieldCache[key] = field;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    BetterMultiplayer.Instance.LogError($"Error caching field {key}: {ex.Message}");
+                }
+            }
         }
 
         public static void Update()
@@ -114,6 +130,7 @@ namespace BetterMultiplayer
             {
                 lastPollTime = UnityEngine.Time.unscaledTime;
                 PollLocalChanges();
+                EnemySync.SendLocalShadeState();
             }
         }
 
@@ -121,55 +138,53 @@ namespace BetterMultiplayer
         {
             if (PlayerData.instance == null || isSyncing) return;
 
-            foreach (var key in Whitelist)
+            foreach (var entry in FieldCache)
             {
+                string key = entry.Key;
+                FieldInfo field = entry.Value;
                 try
                 {
-                    FieldInfo field = typeof(PlayerData).GetField(key, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
-                    if (field != null)
+                    if (field.FieldType == typeof(bool))
                     {
-                        var fieldVal = field.GetValue(PlayerData.instance);
-                        string currentVal = fieldVal != null ? fieldVal.ToString() : "";
-                        
-                        // If key is not in cache, initialize it
-                        if (!localStateCache.TryGetValue(key, out string cachedVal))
+                        bool val = (bool)field.GetValue(PlayerData.instance);
+                        if (!cachedBools.TryGetValue(key, out bool cachedVal))
                         {
-                            localStateCache[key] = currentVal;
-                            continue;
+                            cachedBools[key] = val;
                         }
-
-                        // If value changed locally, update cache
-                        if (currentVal != cachedVal)
+                        else if (val != cachedVal)
                         {
-                            localStateCache[key] = currentVal;
-                            BetterMultiplayer.Instance.Log($"[Local Cache] Detected change: {key} = {currentVal}");
-                            
-                            // Only send if it's a bool that became true, or an int that changed/increased
-                            bool shouldSend = false;
-                            if (field.FieldType == typeof(bool))
+                            cachedBools[key] = val;
+                            BetterMultiplayer.Instance.Log($"[Local Cache] Detected change: {key} = {val}");
+                            if (val) // only sync if it became true
                             {
-                                shouldSend = (currentVal == "True");
+                                NetworkManager.SendPacket($"ITEM|bool|{key}|True");
                             }
-                            else if (field.FieldType == typeof(int))
+                        }
+                    }
+                    else if (field.FieldType == typeof(int))
+                    {
+                        int val = (int)field.GetValue(PlayerData.instance);
+                        if (!cachedInts.TryGetValue(key, out int cachedVal))
+                        {
+                            cachedInts[key] = val;
+                        }
+                        else if (val != cachedVal)
+                        {
+                            cachedInts[key] = val;
+                            BetterMultiplayer.Instance.Log($"[Local Cache] Detected change: {key} = {val}");
+                            bool shouldSend = false;
+                            if (key == "heartPieces" || key == "vesselFragments" || key == "simpleKeys" || key == "ore")
                             {
-                                int currentInt = (int)fieldVal;
-                                int cachedInt = 0;
-                                int.TryParse(cachedVal, out cachedInt);
-                                
-                                if (key == "heartPieces" || key == "vesselFragments" || key == "simpleKeys" || key == "ore")
-                                {
-                                    shouldSend = (currentInt != cachedInt);
-                                }
-                                else
-                                {
-                                    shouldSend = (currentInt > cachedInt);
-                                }
+                                shouldSend = true;
+                            }
+                            else
+                            {
+                                shouldSend = (val > cachedVal);
                             }
 
                             if (shouldSend)
                             {
-                                string type = (field.FieldType == typeof(bool)) ? "bool" : "int";
-                                NetworkManager.SendPacket($"ITEM|{type}|{key}|{currentVal}");
+                                NetworkManager.SendPacket($"ITEM|int|{key}|{val}");
                             }
                         }
                     }
@@ -198,7 +213,7 @@ namespace BetterMultiplayer
                         BetterMultiplayer.Instance.Log($"[Network] Syncing bool {key} = {parsedVal}");
                         isSyncing = true;
                         PlayerData.instance.SetBool(key, parsedVal);
-                        localStateCache[key] = val; // Update cache to prevent reflection detection of network write as local change
+                        cachedBools[key] = parsedVal; // Update cache
                         changed = true;
 
                         // Reset respawning enemies when partner sits at a bench
@@ -239,7 +254,7 @@ namespace BetterMultiplayer
                         }
 
                         PlayerData.instance.SetInt(key, parsedVal);
-                        localStateCache[key] = val; // Update cache to prevent reflection detection of network write as local change
+                        cachedInts[key] = parsedVal; // Update cache
                         changed = true;
                     }
                 }
@@ -274,6 +289,7 @@ namespace BetterMultiplayer
             if (!isSyncing && Whitelist.Contains(name))
             {
                 BetterMultiplayer.Instance.Log($"[Local] Player set bool {name} = {val}");
+                cachedBools[name] = val;
                 NetworkManager.SendPacket($"ITEM|bool|{name}|{val}");
             }
         }
@@ -283,6 +299,7 @@ namespace BetterMultiplayer
             if (!isSyncing && Whitelist.Contains(name))
             {
                 BetterMultiplayer.Instance.Log($"[Local] Player set int {name} = {val}");
+                cachedInts[name] = val;
                 NetworkManager.SendPacket($"ITEM|int|{name}|{val}");
             }
         }
@@ -296,33 +313,29 @@ namespace BetterMultiplayer
             }
 
             BetterMultiplayer.Instance.Log("Syncing all whitelisted items to peer...");
-            foreach (var key in Whitelist)
+            foreach (var entry in FieldCache)
             {
+                string key = entry.Key;
+                FieldInfo field = entry.Value;
                 try
                 {
-                    var field = typeof(PlayerData).GetField(key, System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
-                    if (field != null)
+                    if (field.FieldType == typeof(bool))
                     {
-                        string valStr = "";
-                        if (field.FieldType == typeof(bool))
+                        bool val = (bool)field.GetValue(PlayerData.instance);
+                        cachedBools[key] = val;
+                        if (val)
                         {
-                            bool val = (bool)field.GetValue(PlayerData.instance);
-                            valStr = val.ToString();
-                            if (val)
-                            {
-                                NetworkManager.SendPacket($"ITEM|bool|{key}|{val}");
-                            }
+                            NetworkManager.SendPacket($"ITEM|bool|{key}|True");
                         }
-                        else if (field.FieldType == typeof(int))
+                    }
+                    else if (field.FieldType == typeof(int))
+                    {
+                        int val = (int)field.GetValue(PlayerData.instance);
+                        cachedInts[key] = val;
+                        if (val > 0)
                         {
-                            int val = (int)field.GetValue(PlayerData.instance);
-                            valStr = val.ToString();
-                            if (val > 0)
-                            {
-                                NetworkManager.SendPacket($"ITEM|int|{key}|{val}");
-                            }
+                            NetworkManager.SendPacket($"ITEM|int|{key}|{val}");
                         }
-                        localStateCache[key] = valStr;
                     }
                 }
                 catch (Exception ex)
