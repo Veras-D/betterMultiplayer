@@ -310,14 +310,23 @@ namespace BetterMultiplayer
             }
         }
 
-        private Rect menuWindowRect = new Rect(10, 10, 260, 220);
+        private Rect menuWindowRect = new Rect(10, 40, 260, 220);
 
         void OnGUI()
         {
+            // Draw a permanent tiny "X" button at top-left (10, 10) to toggle menu visibility
+            if (GUI.Button(new Rect(10, 10, 25, 25), "X"))
+            {
+                showMenu = !showMenu;
+                BetterMultiplayer.Instance.Log($"Toggled menu via on-screen X button. showMenu is now: {showMenu}");
+            }
+
             if (!showMenu) return;
 
             int boxWidth = showSkinsMenu ? 500 : 260;
             int boxHeight = showSkinsMenu ? 340 : 220;
+            menuWindowRect.x = 10;
+            menuWindowRect.y = 40;
             menuWindowRect.width = boxWidth;
             menuWindowRect.height = boxHeight;
 
