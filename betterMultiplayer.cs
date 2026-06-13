@@ -77,7 +77,7 @@ namespace BetterMultiplayer
 
     public class BetterMultiplayerMenu : MonoBehaviour
     {
-        private string ipAddress = "127.0.0.1";
+        private string ipAddress = "192.168.0.101";
         private bool showMenu = true;
         private float lastSendTime = 0f;
         private const float SendInterval = 0.033f; // ~30 times a second
