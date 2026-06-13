@@ -182,10 +182,31 @@ namespace BetterMultiplayer
                 {
                     int parsedVal = int.Parse(val);
                     int current = PlayerData.instance.GetInt(key);
-                    if (parsedVal > current)
+                    bool shouldSync = false;
+
+                    if (key == "heartPieces" || key == "vesselFragments" || key == "simpleKeys" || key == "ore")
+                    {
+                        shouldSync = (parsedVal != current);
+                    }
+                    else
+                    {
+                        shouldSync = (parsedVal > current);
+                    }
+
+                    if (shouldSync)
                     {
                         BetterMultiplayer.Instance.Log($"[Network] Syncing int {key} = {parsedVal}");
                         isSyncing = true;
+
+                        // If max health is increasing, heal the player's current health by the difference
+                        if ((key == "maxHealth" || key == "maxHealthBase") && parsedVal > current)
+                        {
+                            int diff = parsedVal - current;
+                            int newHealth = PlayerData.instance.GetInt("health") + diff;
+                            PlayerData.instance.SetInt("health", newHealth);
+                            BetterMultiplayer.Instance.Log($"[Network] Player max health increased, healing current health by +{diff} to {newHealth}");
+                        }
+
                         PlayerData.instance.SetInt(key, parsedVal);
                         localStateCache[key] = val; // Update cache to prevent reflection detection of network write as local change
                         changed = true;
