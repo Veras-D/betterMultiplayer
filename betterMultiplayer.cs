@@ -160,8 +160,8 @@ namespace BetterMultiplayer
 
         void Update()
         {
-            // Keyboard toggle fallback
-            if (Input.GetKeyDown(KeyCode.F10))
+            // Keyboard toggle fallback (supporting multiple keys for Linux and compatibility)
+            if (Input.GetKeyDown(KeyCode.F10) || Input.GetKeyDown(KeyCode.F9) || Input.GetKeyDown(KeyCode.BackQuote) || Input.GetKeyDown(KeyCode.Insert))
             {
                 showMenu = !showMenu;
             }
@@ -256,7 +256,7 @@ namespace BetterMultiplayer
 
             int boxWidth = showSkinsMenu ? 500 : 260;
             int boxHeight = showSkinsMenu ? 340 : 220;
-            GUI.Box(new Rect(10, 10, boxWidth, boxHeight), "betterMultiplayer (F10 / Hold LB+RB)");
+            GUI.Box(new Rect(10, 10, boxWidth, boxHeight), "betterMultiplayer (F9 / ~ / F10 / LB+RB)");
 
             if (showSkinsMenu)
             {
