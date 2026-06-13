@@ -40,6 +40,10 @@ namespace BetterMultiplayer
 
             if (partnerHealthbar != null)
             {
+                // Dynamically update local position and scale to track main healthbar
+                partnerHealthbar.transform.localPosition = mainHealthbar.transform.localPosition + new Vector3(0.5f, 0.9f, -0.05f);
+                partnerHealthbar.transform.localScale = mainHealthbar.transform.localScale * 0.65f;
+
                 int totalMasksNeeded = targetMaxHealth + targetHealthBlue;
                 if (maskClones.Count != totalMasksNeeded || targetMaxHealth != lastMaxHealth || targetHealthBlue != lastHealthBlue)
                 {
@@ -85,8 +89,8 @@ namespace BetterMultiplayer
                 partnerHealthbar = new GameObject("PartnerHealthbar");
                 partnerHealthbar.transform.SetParent(mainHealthbar.transform.parent, false);
                 
-                // Position it above the player's own health bar, and scale it down slightly
-                partnerHealthbar.transform.localPosition = mainHealthbar.transform.localPosition + new Vector3(0.5f, 0.9f, 0f);
+                // Position it above the player's own health bar, and scale it down slightly (closer to camera)
+                partnerHealthbar.transform.localPosition = mainHealthbar.transform.localPosition + new Vector3(0.5f, 0.9f, -0.05f);
                 partnerHealthbar.transform.localScale = mainHealthbar.transform.localScale * 0.65f;
             }
             catch (Exception ex)
@@ -99,14 +103,7 @@ namespace BetterMultiplayer
         {
             try
             {
-                // Clear existing masks
-                foreach (var mask in maskClones)
-                {
-                    if (mask != null) Destroy(mask);
-                }
-                maskClones.Clear();
-
-                // Find a template mask in the main healthbar
+                // Find a template mask in the main healthbar first
                 GameObject templateMask = null;
                 foreach (Transform child in mainHealthbar.transform)
                 {
@@ -118,6 +115,13 @@ namespace BetterMultiplayer
                 }
 
                 if (templateMask == null) return;
+
+                // Clear existing masks only after templateMask is confirmed to exist
+                foreach (var mask in maskClones)
+                {
+                    if (mask != null) Destroy(mask);
+                }
+                maskClones.Clear();
 
                 // Determine spacing
                 float spacing = 0.85f;
@@ -144,6 +148,13 @@ namespace BetterMultiplayer
                     foreach (var fsm in maskClone.GetComponents<PlayMakerFSM>())
                     {
                         fsm.enabled = false;
+                    }
+
+                    // Force reskin on it immediately
+                    var tk2d = maskClone.GetComponent<tk2dSprite>();
+                    if (tk2d != null)
+                    {
+                        SkinManager.ReskinHUDElement(tk2d);
                     }
 
                     maskClones.Add(maskClone);

@@ -524,6 +524,72 @@ namespace BetterMultiplayer
             }
         }
 
+        public static bool IsHUDElement(Transform t)
+        {
+            if (t == null) return false;
+            string name = t.name;
+            if (name == "PartnerHealthbar" || name.StartsWith("health_unit")) return true;
+            
+            Transform parent = t.parent;
+            int depth = 0;
+            while (parent != null && depth < 8)
+            {
+                string pName = parent.name;
+                if (pName == "PartnerHealthbar" || pName == "Hud Canvas" || pName == "Playmaker HUD" || pName.Contains("Healthbar"))
+                {
+                    return true;
+                }
+                parent = parent.parent;
+                depth++;
+            }
+            return false;
+        }
+
+        private static MaterialPropertyBlock hudBlock;
+
+        public static void ApplyTexture(tk2dSprite sprite, Texture2D tex)
+        {
+            if (sprite == null) return;
+            var renderer = sprite.GetComponent<MeshRenderer>();
+            if (renderer != null)
+            {
+                if (hudBlock == null) hudBlock = new MaterialPropertyBlock();
+                renderer.GetPropertyBlock(hudBlock);
+                hudBlock.SetTexture("_MainTex", tex);
+                renderer.SetPropertyBlock(hudBlock);
+            }
+        }
+
+        public static void ReskinHUDElement(tk2dSprite sprite)
+        {
+            if (sprite == null) return;
+            if (LocalHUDTexture == null && LocalOrbFullTexture == null) return;
+            if (sprite.Collection == null) return;
+
+            string colName = sprite.Collection.name;
+            if (string.IsNullOrEmpty(colName)) return;
+
+            // Check Orb/Soul textures first (more specific)
+            if (LocalOrbFullTexture != null && (
+                colName.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                colName.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                colName.IndexOf("orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                colName.IndexOf("vessel", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                ApplyTexture(sprite, LocalOrbFullTexture);
+            }
+            // Check HUD textures
+            else if (LocalHUDTexture != null && (
+                colName.IndexOf("hud", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                colName.IndexOf("health", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                colName.IndexOf("geo", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                colName.IndexOf("heart", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                colName.IndexOf("lifeblood", StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                ApplyTexture(sprite, LocalHUDTexture);
+            }
+        }
+
         private static void ReskinHUDRecursive(Transform parent)
         {
             if (parent == null) return;
@@ -533,18 +599,27 @@ namespace BetterMultiplayer
             {
                 string texName = sr.sprite.texture.name;
 
-                if (LocalHUDTexture != null && texName.IndexOf("hud", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    var block = new MaterialPropertyBlock();
-                    sr.GetPropertyBlock(block);
-                    block.SetTexture("_MainTex", LocalHUDTexture);
-                    sr.SetPropertyBlock(block);
-                }
-                else if (LocalOrbFullTexture != null && (texName.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 || texName.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0))
+                if (LocalOrbFullTexture != null && (
+                    texName.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    texName.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    texName.IndexOf("orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    texName.IndexOf("vessel", StringComparison.OrdinalIgnoreCase) >= 0))
                 {
                     var block = new MaterialPropertyBlock();
                     sr.GetPropertyBlock(block);
                     block.SetTexture("_MainTex", LocalOrbFullTexture);
+                    sr.SetPropertyBlock(block);
+                }
+                else if (LocalHUDTexture != null && (
+                    texName.IndexOf("hud", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    texName.IndexOf("health", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    texName.IndexOf("geo", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    texName.IndexOf("heart", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    texName.IndexOf("lifeblood", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    var block = new MaterialPropertyBlock();
+                    sr.GetPropertyBlock(block);
+                    block.SetTexture("_MainTex", LocalHUDTexture);
                     sr.SetPropertyBlock(block);
                 }
             }
@@ -554,18 +629,11 @@ namespace BetterMultiplayer
             {
                 string colName = tk2d.Collection.name;
 
-                if (LocalHUDTexture != null && colName.IndexOf("hud", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    var renderer = tk2d.GetComponent<MeshRenderer>();
-                    if (renderer != null)
-                    {
-                        var block = new MaterialPropertyBlock();
-                        renderer.GetPropertyBlock(block);
-                        block.SetTexture("_MainTex", LocalHUDTexture);
-                        renderer.SetPropertyBlock(block);
-                    }
-                }
-                else if (LocalOrbFullTexture != null && (colName.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 || colName.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0))
+                if (LocalOrbFullTexture != null && (
+                    colName.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    colName.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    colName.IndexOf("orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    colName.IndexOf("vessel", StringComparison.OrdinalIgnoreCase) >= 0))
                 {
                     var renderer = tk2d.GetComponent<MeshRenderer>();
                     if (renderer != null)
@@ -573,6 +641,22 @@ namespace BetterMultiplayer
                         var block = new MaterialPropertyBlock();
                         renderer.GetPropertyBlock(block);
                         block.SetTexture("_MainTex", LocalOrbFullTexture);
+                        renderer.SetPropertyBlock(block);
+                    }
+                }
+                else if (LocalHUDTexture != null && (
+                    colName.IndexOf("hud", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    colName.IndexOf("health", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    colName.IndexOf("geo", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    colName.IndexOf("heart", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    colName.IndexOf("lifeblood", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    var renderer = tk2d.GetComponent<MeshRenderer>();
+                    if (renderer != null)
+                    {
+                        var block = new MaterialPropertyBlock();
+                        renderer.GetPropertyBlock(block);
+                        block.SetTexture("_MainTex", LocalHUDTexture);
                         renderer.SetPropertyBlock(block);
                     }
                 }
@@ -834,8 +918,11 @@ namespace BetterMultiplayer
                 }
                 else
                 {
-                    // Check if it is the local player main sprite
-                    if (name == "Sprite" && __instance.transform.parent != null && __instance.transform.parent.gameObject == HeroController.instance?.gameObject)
+                    if (SkinManager.IsHUDElement(__instance.transform))
+                    {
+                        SkinManager.ReskinHUDElement(__instance);
+                    }
+                    else if (name == "Sprite" && __instance.transform.parent != null && __instance.transform.parent.gameObject == HeroController.instance?.gameObject)
                     {
                         if (SkinManager.LocalSkinTexture != null)
                         {
@@ -914,14 +1001,7 @@ namespace BetterMultiplayer
  
         private static void ApplyTexture(tk2dSprite sprite, Texture2D tex)
         {
-            var renderer = sprite.GetComponent<MeshRenderer>();
-            if (renderer != null)
-            {
-                if (block == null) block = new MaterialPropertyBlock();
-                renderer.GetPropertyBlock(block);
-                block.SetTexture("_MainTex", tex);
-                renderer.SetPropertyBlock(block);
-            }
+            SkinManager.ApplyTexture(sprite, tex);
         }
     }
 
