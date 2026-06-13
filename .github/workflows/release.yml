@@ -1,0 +1,49 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - master
+      - main
+
+jobs:
+  build:
+    name: Build and Release
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v3
+
+    - name: Setup .NET Core SDK
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '6.0.x'
+
+    - name: Restore and Build DLL
+      run: |
+        dotnet build betterMultiplayer.csproj -c Release
+
+    - name: Prepare Release Structure
+      run: |
+        mkdir -p publish/BepInEx/plugins/betterMultiplayer
+        # Copy compiled DLL directly to BepInEx/plugins/
+        cp bin/Release/netstandard2.1/betterMultiplayer.dll publish/BepInEx/plugins/
+        # Copy default preview
+        cp default_preview.png publish/BepInEx/plugins/betterMultiplayer/
+        # Copy Skins folder
+        cp -r Skins publish/BepInEx/plugins/betterMultiplayer/
+        # Compress the structure
+        cd publish
+        zip -r ../HollowKnight_MultiplayerMod.zip BepInEx
+
+    - name: Create Release and Upload Artifact
+      uses: ncipollo/release-action@v1
+      with:
+        artifacts: "HollowKnight_MultiplayerMod.zip"
+        token: ${{ secrets.GITHUB_TOKEN }}
+        tag: v1.0.${{ github.run_number }}
+        name: "Release v1.0.${{ github.run_number }}"
+        body: "Automated build of the Hollow Knight multiplayer mod for commit ${{ github.sha }}."
+        draft: false
+        prerelease: false

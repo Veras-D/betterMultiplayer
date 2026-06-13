@@ -13,4 +13,4 @@ obj/
 Thumbs.db
 
 # Temp metadata files from workspace
-*.metadata.json
+/*.metadata.json
