@@ -14,6 +14,17 @@ namespace BetterMultiplayer
         private static float lastPollTime = 0f;
         private const float PollInterval = 1.0f; // Check for changes every 1 second
 
+        private static readonly Dictionary<string, HashSet<string>> ListCaches = new Dictionary<string, HashSet<string>>()
+        {
+            { "scenesMapped", new HashSet<string>() },
+            { "scenesEncounteredBench", new HashSet<string>() },
+            { "scenesGrubRescued", new HashSet<string>() },
+            { "scenesFlameCollected", new HashSet<string>() },
+            { "scenesEncounteredCocoon", new HashSet<string>() },
+            { "scenesEncounteredDreamPlant", new HashSet<string>() },
+            { "scenesEncounteredDreamPlantC", new HashSet<string>() }
+        };
+
         private static readonly HashSet<string> Whitelist = new HashSet<string>()
         {
             // Abilities
@@ -130,6 +141,7 @@ namespace BetterMultiplayer
             {
                 lastPollTime = UnityEngine.Time.unscaledTime;
                 PollLocalChanges();
+                PollListChanges();
                 EnemySync.SendLocalShadeState();
             }
         }
@@ -396,6 +408,142 @@ namespace BetterMultiplayer
                 isSyncing = false;
             }
         }
+
+        private static void PollListChanges()
+        {
+            if (PlayerData.instance == null || isSyncing) return;
+
+            foreach (var entry in ListCaches)
+            {
+                string listName = entry.Key;
+                HashSet<string> cache = entry.Value;
+
+                try
+                {
+                    FieldInfo field = typeof(PlayerData).GetField(listName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                    if (field != null)
+                    {
+                        var list = field.GetValue(PlayerData.instance) as List<string>;
+                        if (list != null)
+                        {
+                            if (cache.Count == 0 && list.Count > 0)
+                            {
+                                foreach (var item in list)
+                                {
+                                    cache.Add(item);
+                                }
+                            }
+                            else
+                            {
+                                foreach (var item in list)
+                                {
+                                    if (!string.IsNullOrEmpty(item) && !cache.Contains(item))
+                                    {
+                                        cache.Add(item);
+                                        BetterMultiplayer.Instance.Log($"[Local Cache] Detected list add in {listName}: {item}");
+                                        NetworkManager.SendPacket($"LIST_ADD|{listName}|{item}");
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    BetterMultiplayer.Instance.LogError($"Error polling list field {listName}: {ex.Message}");
+                }
+            }
+        }
+
+        public static void ApplyListAdd(string listName, string val)
+        {
+            try
+            {
+                if (PlayerData.instance == null) return;
+                
+                FieldInfo field = typeof(PlayerData).GetField(listName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
+                if (field != null)
+                {
+                    var list = field.GetValue(PlayerData.instance) as List<string>;
+                    if (list != null)
+                    {
+                        isSyncing = true;
+                        if (!list.Contains(val))
+                        {
+                            BetterMultiplayer.Instance.Log($"[Network] Adding to list {listName}: {val}");
+                            list.Add(val);
+                            if (ListCaches.TryGetValue(listName, out var cache))
+                            {
+                                cache.Add(val);
+                            }
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError($"Error applying list add for {listName}: {ex.Message}");
+            }
+            finally
+            {
+                isSyncing = false;
+            }
+        }
+
+        public static void ApplyPersistentInt(string sceneName, string id, int value, bool semiPersistent)
+        {
+            try
+            {
+                if (SceneData.instance == null) return;
+
+                isSyncing = true;
+
+                PersistentIntData data = SceneData.instance.persistentIntItems.Find(x => x.id == id && x.sceneName == sceneName);
+                if (data == null)
+                {
+                    data = new PersistentIntData { id = id, sceneName = sceneName };
+                    SceneData.instance.persistentIntItems.Add(data);
+                }
+                data.value = value;
+                data.semiPersistent = semiPersistent;
+
+                BetterMultiplayer.Instance.Log($"[PersistentInt] Received value update for {id} in {sceneName} = {value}");
+
+                if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == sceneName)
+                {
+                    foreach (var item in UnityEngine.Object.FindObjectsOfType<PersistentIntItem>())
+                    {
+                        if (item != null && item.GetId() == id)
+                        {
+                            if (item.persistentIntData != null)
+                            {
+                                item.persistentIntData.value = value;
+                            }
+                            var setValMethod = typeof(PersistentIntItem).GetMethod("SetValueOnFSM", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (setValMethod != null)
+                            {
+                                setValMethod.Invoke(item, new object[] { value });
+                            }
+
+                            var saveStateMethod = typeof(PersistentIntItem).GetMethod("SaveState", BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Instance);
+                            if (saveStateMethod != null)
+                            {
+                                saveStateMethod.Invoke(item, null);
+                            }
+                            break;
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError($"Error applying persistent int: " + ex);
+            }
+            finally
+            {
+                isSyncing = false;
+            }
+        }
     }
 
     [HarmonyPatch(typeof(PlayerData), nameof(PlayerData.SetBool))]
@@ -421,10 +569,10 @@ namespace BetterMultiplayer
     {
         public static void Postfix(PersistentBoolData persistentBoolData)
         {
-            if (persistentBoolData != null && persistentBoolData.activated && !ItemSync.isSyncing)
+            if (persistentBoolData != null && !ItemSync.isSyncing)
             {
                 string sceneName = string.IsNullOrEmpty(persistentBoolData.sceneName) ? UnityEngine.SceneManagement.SceneManager.GetActiveScene().name : persistentBoolData.sceneName;
-                BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {persistentBoolData.id} in {sceneName}");
+                BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {persistentBoolData.id} in {sceneName}: {persistentBoolData.activated}");
                 NetworkManager.SendPacket($"PERSIST_BOOL|{sceneName}|{persistentBoolData.id}|{persistentBoolData.activated}|{persistentBoolData.semiPersistent}");
             }
         }
@@ -435,13 +583,45 @@ namespace BetterMultiplayer
     {
         public static void Postfix(PersistentBoolItem __instance)
         {
-            if (__instance != null && __instance.persistentBoolData != null && __instance.persistentBoolData.activated && !ItemSync.isSyncing)
+            if (__instance != null && __instance.persistentBoolData != null && !ItemSync.isSyncing)
             {
                 string sceneName = (__instance.persistentBoolData != null && !string.IsNullOrEmpty(__instance.persistentBoolData.sceneName)) ? __instance.persistentBoolData.sceneName : UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
                 string id = __instance.GetId();
+                bool activated = __instance.persistentBoolData.activated;
                 bool semi = __instance.persistentBoolData.semiPersistent;
-                BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {id} in {sceneName} via SaveState");
-                NetworkManager.SendPacket($"PERSIST_BOOL|{sceneName}|{id}|True|{semi}");
+                BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {id} in {sceneName} via SaveState: {activated}");
+                NetworkManager.SendPacket($"PERSIST_BOOL|{sceneName}|{id}|{activated}|{semi}");
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(SceneData), "SaveMyState", new Type[] { typeof(PersistentIntData) })]
+    public static class SceneData_SaveMyState_Int_Patch
+    {
+        public static void Postfix(PersistentIntData persistentIntData)
+        {
+            if (persistentIntData != null && !ItemSync.isSyncing)
+            {
+                string sceneName = string.IsNullOrEmpty(persistentIntData.sceneName) ? UnityEngine.SceneManagement.SceneManager.GetActiveScene().name : persistentIntData.sceneName;
+                BetterMultiplayer.Instance.Log($"[PersistentInt] Broadcasting value for {persistentIntData.id} in {sceneName}: {persistentIntData.value}");
+                NetworkManager.SendPacket($"PERSIST_INT|{sceneName}|{persistentIntData.id}|{persistentIntData.value}|{persistentIntData.semiPersistent}");
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(PersistentIntItem), "SaveState")]
+    public static class PersistentIntItem_SaveState_Patch
+    {
+        public static void Postfix(PersistentIntItem __instance)
+        {
+            if (__instance != null && __instance.persistentIntData != null && !ItemSync.isSyncing)
+            {
+                string sceneName = (__instance.persistentIntData != null && !string.IsNullOrEmpty(__instance.persistentIntData.sceneName)) ? __instance.persistentIntData.sceneName : UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+                string id = __instance.GetId();
+                int value = __instance.persistentIntData.value;
+                bool semi = __instance.persistentIntData.semiPersistent;
+                BetterMultiplayer.Instance.Log($"[PersistentInt] Broadcasting value for {id} in {sceneName} via SaveState: {value}");
+                NetworkManager.SendPacket($"PERSIST_INT|{sceneName}|{id}|{value}|{semi}");
             }
         }
     }

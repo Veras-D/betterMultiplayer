@@ -98,6 +98,22 @@ namespace BetterMultiplayer
 
                     ItemSync.ApplyPersistentBool(sceneName, id, activated, semiPersistent);
                 }
+                else if (header == "PERSIST_INT" && parts.Length == 5)
+                {
+                    string sceneName = parts[1];
+                    string id = parts[2];
+                    int val = int.Parse(parts[3]);
+                    bool semiPersistent = bool.Parse(parts[4]);
+
+                    ItemSync.ApplyPersistentInt(sceneName, id, val, semiPersistent);
+                }
+                else if (header == "LIST_ADD" && parts.Length == 3)
+                {
+                    string listName = parts[1];
+                    string val = parts[2];
+
+                    ItemSync.ApplyListAdd(listName, val);
+                }
                 else if (header == "SYNCHP" && parts.Length == 3)
                 {
                     string enemyId = parts[1];
