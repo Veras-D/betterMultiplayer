@@ -186,9 +186,9 @@ namespace BetterMultiplayer
             // Periodically send position if connected
             if (NetworkManager.IsClientConnected && HeroController.instance != null)
             {
-                if (Time.time - lastSendTime >= SendInterval)
+                if (Time.unscaledTime - lastSendTime >= SendInterval)
                 {
-                    lastSendTime = Time.time;
+                    lastSendTime = Time.unscaledTime;
                     SendPosition();
                 }
             }
@@ -219,6 +219,14 @@ namespace BetterMultiplayer
                 if (localAnimatorCache != null && localAnimatorCache.CurrentClip != null)
                 {
                     animName = localAnimatorCache.CurrentClip.name;
+                }
+
+                // Force idle animation if in menus/paused
+                bool isPaused = GameManager.instance != null && 
+                               (GameManager.instance.IsGamePaused() || GameManager.instance.gameState != GlobalEnums.GameState.PLAYING);
+                if (isPaused)
+                {
+                    animName = "idle";
                 }
 
                 float normX = 0f;
