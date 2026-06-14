@@ -23,6 +23,8 @@ namespace BetterMultiplayer
         public static Texture2D LocalOrbFullTexture { get; private set; }
         public static Texture2D LocalShadeTexture { get; private set; }
         public static Texture2D LocalLiquidTexture { get; private set; }
+        public static Texture2D LocalHitPtTexture { get; private set; }
+        public static Texture2D LocalDeathPtTexture { get; private set; }
  
         public static Texture2D RemoteCloakTexture { get; private set; }
         public static Texture2D RemoteLiquidTexture { get; private set; }
@@ -33,6 +35,8 @@ namespace BetterMultiplayer
         public static Texture2D RemoteWraithsTexture { get; private set; }
         public static Texture2D RemoteShriekTexture { get; private set; }
         public static Texture2D RemoteShadeTexture { get; private set; }
+        public static Texture2D RemoteHitPtTexture { get; private set; }
+        public static Texture2D RemoteDeathPtTexture { get; private set; }
 
         private static string skinsDir;
         private static List<string> availableSkins = new List<string>();
@@ -118,7 +122,9 @@ namespace BetterMultiplayer
                 LocalOrbFullTexture = LoadExtraTexture(skinName, "OrbFull.png") ?? LoadExtraTexture(skinName, "orbFull.png");
                 LocalShadeTexture = LoadExtraTexture(skinName, "Shade.png") ?? LoadExtraTexture(skinName, "shade.png");
                 LocalLiquidTexture = LoadExtraTexture(skinName, "Liquid.png") ?? LoadExtraTexture(skinName, "liquid.png");
-
+                LocalHitPtTexture = LoadExtraTexture(skinName, "HitPt.png") ?? LoadExtraTexture(skinName, "hitPt.png") ?? LoadExtraTexture(skinName, "hitpt.png");
+                LocalDeathPtTexture = LoadExtraTexture(skinName, "Deathpt.png") ?? LoadExtraTexture(skinName, "deathPt.png") ?? LoadExtraTexture(skinName, "deathpt.png");
+ 
                 BetterMultiplayer.Instance.Log($"Successfully applied local skin: {skinName}");
                 if (CharmIconList.Instance != null)
                 {
@@ -155,6 +161,8 @@ namespace BetterMultiplayer
                 Texture2D shriek = null;
                 Texture2D shade = null;
                 Texture2D liquid = null;
+                Texture2D hitPt = null;
+                Texture2D deathPt = null;
  
                 if (skinName != "Default")
                 {
@@ -168,6 +176,8 @@ namespace BetterMultiplayer
                     shriek = LoadExtraTexture(skinName, "Shriek.png") ?? LoadExtraTexture(skinName, "shriek.png");
                     shade = LoadExtraTexture(skinName, "Shade.png") ?? LoadExtraTexture(skinName, "shade.png");
                     liquid = LoadExtraTexture(skinName, "Liquid.png") ?? LoadExtraTexture(skinName, "liquid.png");
+                    hitPt = LoadExtraTexture(skinName, "HitPt.png") ?? LoadExtraTexture(skinName, "hitPt.png") ?? LoadExtraTexture(skinName, "hitpt.png");
+                    deathPt = LoadExtraTexture(skinName, "Deathpt.png") ?? LoadExtraTexture(skinName, "deathPt.png") ?? LoadExtraTexture(skinName, "deathpt.png");
                 }
  
                 RemoteSkinTexture = tex;
@@ -180,7 +190,9 @@ namespace BetterMultiplayer
                 RemoteShriekTexture = shriek;
                 RemoteShadeTexture = shade;
                 RemoteLiquidTexture = liquid;
-
+                RemoteHitPtTexture = hitPt;
+                RemoteDeathPtTexture = deathPt;
+ 
                 RemoteSelectedSkin = skinName;
 
                 BetterMultiplayer.Instance.Log($"Loaded skin for partner: {skinName}");
@@ -519,21 +531,78 @@ namespace BetterMultiplayer
             }
         }
  
+        public static void ReskinMaterial(Material mat, Texture2D defaultTex)
+        {
+            if (mat == null) return;
+            
+            string matName = mat.name ?? "";
+            string texName = mat.mainTexture != null ? mat.mainTexture.name : "";
+
+            if (matName.IndexOf("HitPt", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                texName.IndexOf("HitPt", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                matName.IndexOf("Hit_Pt", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                texName.IndexOf("Hit_Pt", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                if (LocalHitPtTexture != null)
+                {
+                    mat.mainTexture = LocalHitPtTexture;
+                }
+            }
+            else if (matName.IndexOf("Deathpt", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                texName.IndexOf("Deathpt", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                matName.IndexOf("Death_Pt", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                texName.IndexOf("Death_Pt", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                if (LocalDeathPtTexture != null)
+                {
+                    mat.mainTexture = LocalDeathPtTexture;
+                }
+            }
+            else if (matName.IndexOf("Liquid", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                texName.IndexOf("Liquid", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                if (LocalLiquidTexture != null)
+                {
+                    mat.mainTexture = LocalLiquidTexture;
+                }
+            }
+            else if (matName.IndexOf("HUD", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                texName.IndexOf("HUD", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                matName.IndexOf("health", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                texName.IndexOf("health", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                matName.IndexOf("geo", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                texName.IndexOf("geo", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                matName.IndexOf("heart", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                texName.IndexOf("heart", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                matName.IndexOf("lifeblood", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                texName.IndexOf("lifeblood", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                if (LocalHUDTexture != null)
+                {
+                    mat.mainTexture = LocalHUDTexture;
+                }
+            }
+            else if (defaultTex != null)
+            {
+                mat.mainTexture = defaultTex;
+            }
+        }
+
         public static void ReskinCollection(tk2dSpriteCollectionData collection, Texture2D customTex)
         {
-            if (collection == null || customTex == null) return;
+            if (collection == null) return;
             
-            if (collection.material != null && collection.material.mainTexture != customTex)
+            if (collection.material != null)
             {
-                collection.material.mainTexture = customTex;
+                ReskinMaterial(collection.material, customTex);
             }
             if (collection.materials != null)
             {
                 for (int i = 0; i < collection.materials.Length; i++)
                 {
-                    if (collection.materials[i] != null && collection.materials[i].mainTexture != customTex)
+                    if (collection.materials[i] != null)
                     {
-                        collection.materials[i].mainTexture = customTex;
+                        ReskinMaterial(collection.materials[i], customTex);
                     }
                 }
             }
@@ -541,7 +610,7 @@ namespace BetterMultiplayer
 
         public static void UpdateHUDSkin()
         {
-            if (LocalHUDTexture == null && LocalOrbFullTexture == null && LocalLiquidTexture == null) return;
+            if (LocalHUDTexture == null && LocalOrbFullTexture == null && LocalLiquidTexture == null && LocalHitPtTexture == null && LocalDeathPtTexture == null) return;
  
             GameObject hudCanvas = GameObject.Find("Hud Canvas");
             if (hudCanvas != null)
@@ -579,21 +648,39 @@ namespace BetterMultiplayer
                         }
                     }
                 }
-
+ 
                 ReskinHUDRecursive(hudCanvas.transform);
             }
         }
-
+ 
         private static void ReskinHUDRecursive(Transform parent)
         {
             if (parent == null) return;
-
+ 
             var sr = parent.GetComponent<SpriteRenderer>();
             if (sr != null && sr.sprite != null && sr.sprite.texture != null)
             {
                 string texName = sr.sprite.texture.name;
-
-                if (LocalLiquidTexture != null && (
+ 
+                if (LocalHitPtTexture != null && (
+                    texName.IndexOf("HitPt", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    texName.IndexOf("Hit_Pt", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    var block = new MaterialPropertyBlock();
+                    sr.GetPropertyBlock(block);
+                    block.SetTexture("_MainTex", LocalHitPtTexture);
+                    sr.SetPropertyBlock(block);
+                }
+                else if (LocalDeathPtTexture != null && (
+                    texName.IndexOf("Deathpt", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    texName.IndexOf("Death_Pt", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    var block = new MaterialPropertyBlock();
+                    sr.GetPropertyBlock(block);
+                    block.SetTexture("_MainTex", LocalDeathPtTexture);
+                    sr.SetPropertyBlock(block);
+                }
+                else if (LocalLiquidTexture != null && (
                     texName.IndexOf("liquid", StringComparison.OrdinalIgnoreCase) >= 0))
                 {
                     var block = new MaterialPropertyBlock();
