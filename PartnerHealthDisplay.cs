@@ -70,7 +70,7 @@ namespace BetterMultiplayer
                     GameObject mask = maskClones[i];
                     if (mask == null) continue;
 
-                    var animator = mask.GetComponent<tk2dSpriteAnimator>();
+                    var animator = mask.GetComponentInChildren<tk2dSpriteAnimator>();
                     if (animator != null)
                     {
                         if (i < targetHealth)
@@ -178,13 +178,19 @@ namespace BetterMultiplayer
                     maskClone.SetActive(true);
 
                     // Disable all PlayMakerFSMs on it so it doesn't run the main player's health logic
-                    foreach (var fsm in maskClone.GetComponents<PlayMakerFSM>())
+                    foreach (var fsm in maskClone.GetComponentsInChildren<PlayMakerFSM>(true))
                     {
                         fsm.enabled = false;
                     }
 
+                    // Ensure all child GameObjects (like Health 1) are active
+                    foreach (Transform child in maskClone.transform)
+                    {
+                        child.gameObject.SetActive(true);
+                    }
+
                     // Force reskin on it immediately
-                    var tk2d = maskClone.GetComponent<tk2dSprite>();
+                    var tk2d = maskClone.GetComponentInChildren<tk2dSprite>();
                     if (tk2d != null && tk2d.Collection != null && SkinManager.LocalHUDTexture != null)
                     {
                         SkinManager.ReskinCollection(tk2d.Collection, SkinManager.LocalHUDTexture);

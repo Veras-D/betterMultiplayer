@@ -75,11 +75,9 @@ namespace BetterMultiplayer
             {
                 try
                 {
-                    Log("Spawning betterMultiplayerManager GameObject in scene: " + scene.name);
                     managerGo = new GameObject("betterMultiplayerManager");
                     managerGo.AddComponent<MainThreadDispatcher>();
                     managerGo.AddComponent<BetterMultiplayerMenu>();
-                    managerGo.AddComponent<PartnerHealthDisplay>();
                     UnityEngine.Object.DontDestroyOnLoad(managerGo);
                 }
                 catch (Exception ex)
