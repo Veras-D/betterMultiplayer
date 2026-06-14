@@ -112,7 +112,7 @@ namespace BetterMultiplayer
 
                 // Load extra textures
                 LocalCloakTexture = LoadExtraTexture(skinName, "Cloak.png");
-                LocalHUDTexture = LoadExtraTexture(skinName, "HUD.png") ?? LoadExtraTexture(skinName, "Hud.png");
+                LocalHUDTexture = LoadExtraTexture(skinName, "HUD.png", flipVertical: true) ?? LoadExtraTexture(skinName, "Hud.png", flipVertical: true);
                 if (LocalHUDTexture != null && (LocalHUDTexture.width != 2048 || LocalHUDTexture.height != 2048))
                 {
                     BetterMultiplayer.Instance.LogError(
@@ -376,19 +376,41 @@ namespace BetterMultiplayer
             }
         }
 
-        private static Texture2D LoadTexture(string filePath)
+        private static Texture2D LoadTexture(string filePath, bool flipVertical = false)
         {
             try
             {
                 byte[] fileData = File.ReadAllBytes(filePath);
-                // Use mipmaps=true and trilinear filtering to match the original
-                // DXT5/BC3 atlas characteristics. This prevents the "unscaled" /
-                // sprite-bleeding artifacts when the new texture is sampled at
-                // sprite boundaries that the original atlas was authored for.
-                Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, true);
+                // mipmaps=false: runtime-loaded mipmaps on a sprite atlas bleed
+                // sprite edges into adjacent sprite regions at lower mip
+                // levels, which is what causes the "appears during animation
+                // then disappears" artifact when the mip sampler reads the
+                // wrong area of the atlas as the sprite scales.
+                Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
                 if (UnityEngine.ImageConversion.LoadImage(tex, fileData))
                 {
-                    tex.filterMode = FilterMode.Trilinear;
+                    // UnityEngine.ImageConversion.LoadImage loads PNGs
+                    // bottom-up (Y=0 at the bottom of the runtime texture),
+                    // but the Custom Knight Hud.png was authored top-down
+                    // and tk2dSpriteDefinition.uvs[] were baked against that
+                    // orientation. Without flipping, every UV sample hits
+                    // the vertically-mirrored version of the atlas, which is
+                    // the actual root cause of the "life icon in extra soul
+                    // slot" / "geo counter shows soul vessel" / etc. mismaps.
+                    //
+                    // Custom Knight itself ships a precompiled Unity asset
+                    // bundle (not a raw PNG), so Unity's asset import handles
+                    // the orientation flip at build time. We have to do it
+                    // at runtime, but ONLY for the Hud.png — the character
+                    // Knight.png is applied per-renderer via
+                    // MaterialPropertyBlock and works with the default
+                    // (flipped) load. The flipVertical flag lets us opt in
+                    // per-file.
+                    if (flipVertical)
+                    {
+                        tex = FlipTextureVertically(tex);
+                    }
+                    tex.filterMode = FilterMode.Bilinear;
                     tex.anisoLevel = 4;
                     tex.wrapMode = TextureWrapMode.Clamp;
                     return tex;
@@ -399,6 +421,23 @@ namespace BetterMultiplayer
                 BetterMultiplayer.Instance.LogError("Error loading texture from file: " + ex);
             }
             return null;
+        }
+
+        private static Texture2D FlipTextureVertically(Texture2D original)
+        {
+            var pixels = original.GetPixels();
+            int w = original.width;
+            int h = original.height;
+            var flipped = new Texture2D(w, h, original.format, false);
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    flipped.SetPixel(x, h - 1 - y, pixels[y * w + x]);
+                }
+            }
+            flipped.Apply();
+            return flipped;
         }
 
         public static void LoadSkinDetails(string skinName, out Texture2D previewTex, out string author, out string desc)
@@ -487,9 +526,16 @@ namespace BetterMultiplayer
             return "Unknown";
         }
 
-        private static Texture2D GetCachedTexture(string skinName, string fileName)
+        private static Texture2D GetCachedTexture(string skinName, string fileName, bool flipVertical = false)
         {
             if (skinName == "Default") return null;
+
+            // The cached texture is keyed by filename only, so a flipVertical
+            // call against an already-cached, non-flipped texture (or vice
+            // versa) would return the wrong orientation. We append a
+            // suffix to the cache key to keep flipped and non-flipped
+            // copies separate.
+            string cacheKey = fileName + (flipVertical ? "|flip" : "");
 
             if (!textureCache.TryGetValue(skinName, out var skinCache))
             {
@@ -497,7 +543,7 @@ namespace BetterMultiplayer
                 textureCache[skinName] = skinCache;
             }
 
-            if (skinCache.TryGetValue(fileName, out var cachedTex))
+            if (skinCache.TryGetValue(cacheKey, out var cachedTex))
             {
                 return cachedTex;
             }
@@ -508,10 +554,10 @@ namespace BetterMultiplayer
                 string fullPath = Path.Combine(skinPath, fileName);
                 if (File.Exists(fullPath))
                 {
-                    Texture2D tex = LoadTexture(fullPath);
+                    Texture2D tex = LoadTexture(fullPath, flipVertical);
                     if (tex != null)
                     {
-                        skinCache[fileName] = tex;
+                        skinCache[cacheKey] = tex;
                         return tex;
                     }
                 }
@@ -524,9 +570,9 @@ namespace BetterMultiplayer
             return null;
         }
 
-        private static Texture2D LoadExtraTexture(string skinName, string fileName)
+        private static Texture2D LoadExtraTexture(string skinName, string fileName, bool flipVertical = false)
         {
-            return GetCachedTexture(skinName, fileName);
+            return GetCachedTexture(skinName, fileName, flipVertical);
         }
 
         public static void ForceUpdateAllSprites()
