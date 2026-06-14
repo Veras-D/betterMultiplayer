@@ -113,6 +113,13 @@ namespace BetterMultiplayer
                 // Load extra textures
                 LocalCloakTexture = LoadExtraTexture(skinName, "Cloak.png");
                 LocalHUDTexture = LoadExtraTexture(skinName, "HUD.png") ?? LoadExtraTexture(skinName, "Hud.png");
+                if (LocalHUDTexture != null && (LocalHUDTexture.width != 2048 || LocalHUDTexture.height != 2048))
+                {
+                    BetterMultiplayer.Instance.LogError(
+                        $"[Skin] {skinName}/Hud.png is {LocalHUDTexture.width}x{LocalHUDTexture.height} — " +
+                        "must be 2048x2048 (Custom Knight atlas format). HUD skin will not be applied.");
+                    LocalHUDTexture = null;
+                }
                 LocalVSTexture = LoadExtraTexture(skinName, "VS.png");
                 LocalWingsTexture = LoadExtraTexture(skinName, "Wings.png");
                 LocalSprintTexture = LoadExtraTexture(skinName, "Sprint.png") ?? LoadExtraTexture(skinName, "sprint.png");
@@ -747,6 +754,7 @@ namespace BetterMultiplayer
             // "unscaled" / mismapped sprite look the user reported.
             if (LocalHUDTexture != null)
             {
+                BetterMultiplayer.Instance.Log($"[HUD] Hud.png size: {LocalHUDTexture.width}x{LocalHUDTexture.height}");
                 // Find ALL distinct materials used by HUD sprites, not just
                 // "Health 1". The HUD has multiple collections (HUD Cln,
                 // HUD_Soulorb_fills, Charm Blocker Cln, HUD Extras Cln) and
@@ -1096,6 +1104,39 @@ namespace BetterMultiplayer
                             name.IndexOf("vessel", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
                             return;
+                        }
+
+                        // Re-apply the HUD texture for any HUD sprite whose
+                        // collection name indicates it's part of the HUD
+                        // atlas. The game calls SetSprite() on these sprites
+                        // during state changes (animations, taking damage,
+                        // recovering life) and that call can reset or
+                        // re-instance the material's mainTexture. This
+                        // Postfix fires on every SetSprite, so re-applying
+                        // here keeps the skin stable across all state
+                        // changes.
+                        if (SkinManager.LocalHUDTexture != null)
+                        {
+                            bool isHUDCollection =
+                                colName.IndexOf("HUD", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                colName.IndexOf("Soulorb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                colName.IndexOf("Charm Blocker", StringComparison.OrdinalIgnoreCase) >= 0;
+                            if (isHUDCollection)
+                            {
+                                var hudDef = __instance.GetCurrentSpriteDef();
+                                if (hudDef != null)
+                                {
+                                    if (hudDef.material != null && hudDef.material.mainTexture != SkinManager.LocalHUDTexture)
+                                    {
+                                        hudDef.material.mainTexture = SkinManager.LocalHUDTexture;
+                                    }
+                                    if (hudDef.materialInst != null && hudDef.materialInst != hudDef.material
+                                        && hudDef.materialInst.mainTexture != SkinManager.LocalHUDTexture)
+                                    {
+                                        hudDef.materialInst.mainTexture = SkinManager.LocalHUDTexture;
+                                    }
+                                }
+                            }
                         }
                     }
                 }
