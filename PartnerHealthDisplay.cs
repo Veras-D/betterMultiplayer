@@ -41,13 +41,19 @@ namespace BetterMultiplayer
             if (partnerHealthbar != null)
             {
                 // Position it above the player's own health bar, and scale it down slightly
-                partnerHealthbar.transform.position = mainHealthbar.transform.position + new Vector3(0.1f, 1.0f, -0.05f);
-                partnerHealthbar.transform.localScale = mainHealthbar.transform.localScale * 0.65f;
+                partnerHealthbar.transform.position = mainHealthbar.transform.position + new Vector3(0.0f, 1.2f, -0.05f);
+                
+                Vector3 mainLossy = mainHealthbar.transform.lossyScale;
+                partnerHealthbar.transform.localScale = new Vector3(
+                    Mathf.Abs(mainLossy.x) * 0.65f, 
+                    Mathf.Abs(mainLossy.y) * 0.65f, 
+                    Mathf.Abs(mainLossy.z) * 0.65f
+                );
 
                 if (Time.frameCount % 300 == 0)
                 {
-                    BetterMultiplayer.Instance.Log($"[HUD Debug] mainHealthbar={mainHealthbar.name}, parent={mainHealthbar.transform.parent?.name}, localPos={mainHealthbar.transform.localPosition}, worldPos={mainHealthbar.transform.position}, scale={mainHealthbar.transform.localScale}, layer={mainHealthbar.layer}");
-                    BetterMultiplayer.Instance.Log($"[HUD Debug] partnerHealthbar={partnerHealthbar.name}, parent={partnerHealthbar.transform.parent?.name}, localPos={partnerHealthbar.transform.localPosition}, worldPos={partnerHealthbar.transform.position}, scale={partnerHealthbar.transform.localScale}, layer={partnerHealthbar.layer}");
+                    BetterMultiplayer.Instance.Log($"[HUD Debug] mainHealthbar={mainHealthbar.name}, parent={(mainHealthbar.transform.parent != null ? mainHealthbar.transform.parent.name : "null")}, localPos={mainHealthbar.transform.localPosition}, worldPos={mainHealthbar.transform.position}, scale={mainHealthbar.transform.localScale}, lossyScale={mainHealthbar.transform.lossyScale}, layer={mainHealthbar.layer}");
+                    BetterMultiplayer.Instance.Log($"[HUD Debug] partnerHealthbar={partnerHealthbar.name}, parent={(partnerHealthbar.transform.parent != null ? partnerHealthbar.transform.parent.name : "null")}, localPos={partnerHealthbar.transform.localPosition}, worldPos={partnerHealthbar.transform.position}, scale={partnerHealthbar.transform.localScale}, layer={partnerHealthbar.layer}");
                 }
 
                 int totalMasksNeeded = targetMaxHealth + targetHealthBlue;
@@ -93,13 +99,28 @@ namespace BetterMultiplayer
             {
                 BetterMultiplayer.Instance.Log("Creating PartnerHealthbar...");
                 partnerHealthbar = new GameObject("PartnerHealthbar");
-                // Parent to mainHealthbar's parent (Playmaker HUD) as a sibling to avoid breaking the Healthbar FSM layout
-                partnerHealthbar.transform.SetParent(mainHealthbar.transform.parent, false);
+                
+                // Parent to Hud Canvas directly to prevent Playmaker HUD's layout/FSM and negative scale interference
+                GameObject hudCanvas = GameObject.Find("Hud Canvas");
+                if (hudCanvas != null)
+                {
+                    partnerHealthbar.transform.SetParent(hudCanvas.transform, false);
+                }
+                else
+                {
+                    partnerHealthbar.transform.SetParent(mainHealthbar.transform.parent, false);
+                }
                 partnerHealthbar.layer = mainHealthbar.layer;
                 
                 // Position it above the player's own health bar, and scale it down slightly
-                partnerHealthbar.transform.position = mainHealthbar.transform.position + new Vector3(0.1f, 1.0f, -0.05f);
-                partnerHealthbar.transform.localScale = mainHealthbar.transform.localScale * 0.65f;
+                partnerHealthbar.transform.position = mainHealthbar.transform.position + new Vector3(0.0f, 1.2f, -0.05f);
+                
+                Vector3 mainLossy = mainHealthbar.transform.lossyScale;
+                partnerHealthbar.transform.localScale = new Vector3(
+                    Mathf.Abs(mainLossy.x) * 0.65f, 
+                    Mathf.Abs(mainLossy.y) * 0.65f, 
+                    Mathf.Abs(mainLossy.z) * 0.65f
+                );
             }
             catch (Exception ex)
             {
@@ -153,6 +174,9 @@ namespace BetterMultiplayer
                     maskClone.transform.localScale = Vector3.one;
                     SetLayerRecursive(maskClone, mainHealthbar.layer);
 
+                    // Ensure the clone is active, even if the template was deactivated (e.g. if the local player took damage)
+                    maskClone.SetActive(true);
+
                     // Disable all PlayMakerFSMs on it so it doesn't run the main player's health logic
                     foreach (var fsm in maskClone.GetComponents<PlayMakerFSM>())
                     {
@@ -161,9 +185,9 @@ namespace BetterMultiplayer
 
                     // Force reskin on it immediately
                     var tk2d = maskClone.GetComponent<tk2dSprite>();
-                    if (tk2d != null)
+                    if (tk2d != null && tk2d.Collection != null && SkinManager.LocalHUDTexture != null)
                     {
-                        SkinManager.ReskinHUDElement(tk2d);
+                        SkinManager.ReskinCollection(tk2d.Collection, SkinManager.LocalHUDTexture);
                     }
 
                     maskClones.Add(maskClone);
