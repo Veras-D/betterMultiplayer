@@ -130,7 +130,7 @@ namespace BetterMultiplayer
                 {
                     ApplyCharmSkins(CharmIconList.Instance);
                 }
-                UpdateHUDSkin();
+                hudSkinPending = true;
                 ForceUpdateAllSprites();
                 if (NetworkManager.IsClientConnected)
                 {
@@ -205,6 +205,9 @@ namespace BetterMultiplayer
         }
 
         private static string lastHUDScene = "";
+        private static bool hudSkinPending = false;
+        private static int hudSkinRetryCount = 0;
+        private const int MAX_HUD_RETRY_FRAMES = 300; // ~5 seconds at 60fps before giving up
         private static MeshRenderer localMeshRenderer;
         private static MeshRenderer remoteMeshRenderer;
         private static MeshRenderer localCloakRenderer;
@@ -279,7 +282,29 @@ namespace BetterMultiplayer
                     remoteMeshRenderer = null;
                     localCloakRenderer = null;
                     remoteCloakRenderer = null;
-                    UpdateHUDSkin();
+                    hudSkinPending = true;
+                    hudSkinRetryCount = 0;
+                }
+
+                if (hudSkinPending)
+                {
+                    hudSkinRetryCount++;
+                    if (hudSkinRetryCount > MAX_HUD_RETRY_FRAMES)
+                    {
+                        // Give up to avoid lag; tk2dSprite_Awake_Patch will catch HUD sprites as they wake
+                        hudSkinPending = false;
+                        hudSkinRetryCount = 0;
+                    }
+                    else
+                    {
+                        var hudCanvas = GameObject.Find("Hud Canvas");
+                        if (hudCanvas != null)
+                        {
+                            UpdateHUDSkin();
+                            hudSkinPending = false;  // only clear once HUD was actually found and skinned
+                            hudSkinRetryCount = 0;
+                        }
+                    }
                 }
 
                 var lCloak = GetLocalCloakRenderer();
@@ -349,11 +374,16 @@ namespace BetterMultiplayer
             try
             {
                 byte[] fileData = File.ReadAllBytes(filePath);
-                Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, false);
+                // Use mipmaps=true and trilinear filtering to match the original
+                // DXT5/BC3 atlas characteristics. This prevents the "unscaled" /
+                // sprite-bleeding artifacts when the new texture is sampled at
+                // sprite boundaries that the original atlas was authored for.
+                Texture2D tex = new Texture2D(2, 2, TextureFormat.RGBA32, true);
                 if (UnityEngine.ImageConversion.LoadImage(tex, fileData))
                 {
-                    tex.filterMode = FilterMode.Bilinear;
+                    tex.filterMode = FilterMode.Trilinear;
                     tex.anisoLevel = 4;
+                    tex.wrapMode = TextureWrapMode.Clamp;
                     return tex;
                 }
             }
@@ -531,12 +561,22 @@ namespace BetterMultiplayer
             }
         }
  
-        public static void ReskinMaterial(Material mat, Texture2D defaultTex)
+        public static void ReskinMaterial(Material mat, Texture2D defaultTex, bool forceHud = false)
         {
             if (mat == null) return;
             
             string matName = mat.name ?? "";
             string texName = mat.mainTexture != null ? mat.mainTexture.name : "";
+
+            if (forceHud)
+            {
+                if (LocalHUDTexture != null)
+                {
+                    mat.mainTexture = LocalHUDTexture;
+                    BetterMultiplayer.Instance.Log($"[ReskinMaterial] Force-applied HUD texture to material '{matName}' (tex was '{(mat.mainTexture != null ? mat.mainTexture.name : "null")}')");
+                }
+                return;
+            }
 
             if (matName.IndexOf("HitPt", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 texName.IndexOf("HitPt", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -598,18 +638,13 @@ namespace BetterMultiplayer
             }
         }
 
-        public static void ReskinCollection(tk2dSpriteCollectionData collection, Texture2D customTex)
+        public static void ReskinCollection(tk2dSpriteCollectionData collection, Texture2D customTex, bool forceHud = false)
         {
             if (collection == null || customTex == null) return;
             
-            if (collection.material != null && collection.material.mainTexture == customTex)
-            {
-                return;
-            }
-            
             if (collection.material != null)
             {
-                ReskinMaterial(collection.material, customTex);
+                ReskinMaterial(collection.material, customTex, forceHud);
             }
             if (collection.materials != null)
             {
@@ -617,7 +652,7 @@ namespace BetterMultiplayer
                 {
                     if (collection.materials[i] != null)
                     {
-                        ReskinMaterial(collection.materials[i], customTex);
+                        ReskinMaterial(collection.materials[i], customTex, forceHud);
                     }
                 }
             }
@@ -628,7 +663,7 @@ namespace BetterMultiplayer
                     var def = collection.spriteDefinitions[i];
                     if (def != null && def.material != null)
                     {
-                        ReskinMaterial(def.material, customTex);
+                        ReskinMaterial(def.material, customTex, forceHud);
                     }
                 }
             }
@@ -671,151 +706,154 @@ namespace BetterMultiplayer
         {
             if (LocalHUDTexture == null && LocalOrbFullTexture == null && LocalLiquidTexture == null && LocalHitPtTexture == null && LocalDeathPtTexture == null) return;
  
-            GameObject healthbar = GameObject.Find("Healthbar");
-            if (healthbar != null)
+            // Use the proper way to access the HUD canvas
+            GameObject hudCanvas = null;
+            try
             {
-                BetterMultiplayer.Instance.Log("=== DUMPING HEALTHBAR HIERARCHY ===");
-                DumpHierarchy(healthbar, "");
-                BetterMultiplayer.Instance.Log("===================================");
+                if (GameCameras.instance != null)
+                {
+                    hudCanvas = GameCameras.instance.hudCanvas;
+                }
             }
-
-            GameObject hudCanvas = GameObject.Find("Hud Canvas");
-            if (hudCanvas != null)
+            catch { }
+            if (hudCanvas == null)
             {
-                // Reskin all tk2dSprite collections present in the HUD
+                hudCanvas = GameObject.Find("Hud Canvas");
+            }
+            if (hudCanvas == null) return;
+
+            // One-time diagnostic: dump HUD canvas structure so we can see what
+            // sprites and materials exist. Helps identify which element is glitchy.
+            DumpHUDStructure(hudCanvas);
+
+            // === HUD texture: region-based replacement using SheetItem approach ===
+            // The user's HUD.png is a 2048x2048 Custom Knight sheet where sprites are
+            // at SPECIFIC hardcoded coordinates. The original tk2dSpriteDefinitions
+            // have UV coordinates based on the original atlas positions, so we
+            // extract each sprite's UV region from the user's HUD.png and assign a
+            // new sprite (built from that extracted region) to the matching
+            // GameObject. This works for any HUD layout.
+            // === HUD texture: replace the entire HUD atlas ===
+            // The standard Custom Knight approach: get the material from the
+            // "Health 1" sprite's current sprite definition and set its
+            // mainTexture to the skin's Hud.png. Since every HUD sprite
+            // shares the same material (or materialInst), this single swap
+            // updates the entire HUD atlas.
+            //
+            // We also reset the _MainTex_ST tiling/offset to (1,1,0,0) and
+            // set the new texture's wrapMode to Clamp. Without this, leftover
+            // values from the original DXT5 atlas cause the new texture to be
+            // sampled at wrong scale/offset, which is what produced the
+            // "unscaled" / mismapped sprite look the user reported.
+            if (LocalHUDTexture != null)
+            {
+                // Find ALL distinct materials used by HUD sprites, not just
+                // "Health 1". The HUD has multiple collections (HUD Cln,
+                // HUD_Soulorb_fills, Charm Blocker Cln, HUD Extras Cln) and
+                // each may use a different material. Missing any of them
+                // leaves a subset of HUD sprites using the default atlas.
+                HashSet<Material> updatedMaterials = new HashSet<Material>();
+                int spriteCount = 0;
                 foreach (var sprite in hudCanvas.GetComponentsInChildren<tk2dSprite>(true))
                 {
-                    if (sprite != null && sprite.Collection != null)
-                    {
-                        string colName = sprite.Collection.name;
-                        string goName = sprite.gameObject.name;
+                    if (sprite == null || sprite.Collection == null) continue;
+                    var def = sprite.GetCurrentSpriteDef();
+                    if (def == null) continue;
+                    spriteCount++;
 
-                        // Check local liquid and orb first by GameObject name to apply textures individually
-                        if (goName.IndexOf("liquid", StringComparison.OrdinalIgnoreCase) >= 0)
+                    if (def.material != null && updatedMaterials.Add(def.material))
+                    {
+                        if (def.material.mainTexture != LocalHUDTexture)
                         {
-                            tk2dSprite_Awake_Patch.ApplyHUDTexture(sprite, LocalLiquidTexture);
+                            def.material.mainTexture = LocalHUDTexture;
                         }
-                        else if (goName.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            goName.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            goName.IndexOf("vessel", StringComparison.OrdinalIgnoreCase) >= 0)
+                        def.material.SetTextureScale("_MainTex", new Vector2(1f, 1f));
+                        def.material.SetTextureOffset("_MainTex", new Vector2(0f, 0f));
+                    }
+                    if (def.materialInst != null && def.materialInst != def.material && updatedMaterials.Add(def.materialInst))
+                    {
+                        if (def.materialInst.mainTexture != LocalHUDTexture)
                         {
-                            tk2dSprite_Awake_Patch.ApplyHUDTexture(sprite, LocalOrbFullTexture);
+                            def.materialInst.mainTexture = LocalHUDTexture;
                         }
-                        else if (!string.IsNullOrEmpty(colName))
-                        {
-                            if (LocalHUDTexture != null && (
-                                colName.IndexOf("hud", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                colName.IndexOf("health", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                colName.IndexOf("geo", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                colName.IndexOf("heart", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                colName.IndexOf("lifeblood", StringComparison.OrdinalIgnoreCase) >= 0))
-                            {
-                                tk2dSprite_Awake_Patch.ApplyHUDTexture(sprite, LocalHUDTexture);
-                            }
-                        }
+                        def.materialInst.SetTextureScale("_MainTex", new Vector2(1f, 1f));
+                        def.materialInst.SetTextureOffset("_MainTex", new Vector2(0f, 0f));
                     }
                 }
- 
-                ReskinHUDRecursive(hudCanvas.transform);
+                BetterMultiplayer.Instance.Log($"[UpdateHUDSkin] Applied HUD.png to {updatedMaterials.Count} material(s) across {spriteCount} sprites");
+            }
+
+            // === OrbFull texture: replace the "Orb Full" SpriteRenderer's sprite ===
+            // The soul vessel uses a UGUI SpriteRenderer, not tk2dSprite.
+            if (LocalOrbFullTexture != null)
+            {
+                SpriteRenderer orbFull = null;
+                SpriteRenderer pulseSprite = null;
+                foreach (var sr in hudCanvas.GetComponentsInChildren<SpriteRenderer>(true))
+                {
+                    if (sr == null) continue;
+                    string n = sr.gameObject.name;
+                    if (n == "Orb Full") orbFull = sr;
+                    else if (n == "Pulse Sprite") pulseSprite = sr;
+                }
+                if (orbFull != null && orbFull.sprite != null)
+                {
+                    Sprite newSprite = Sprite.Create(LocalOrbFullTexture,
+                        new Rect(0f, 0f, LocalOrbFullTexture.width, LocalOrbFullTexture.height),
+                        orbFull.sprite.pivot / orbFull.sprite.rect.size,
+                        orbFull.sprite.pixelsPerUnit);
+                    orbFull.sprite = newSprite;
+                    BetterMultiplayer.Instance.Log("[UpdateHUDSkin] Applied OrbFull.png to 'Orb Full' SpriteRenderer");
+                }
+                // Destroy the pulse effect since it would show the old orb
+                if (pulseSprite != null && pulseSprite.gameObject != null)
+                {
+                    UnityEngine.Object.Destroy(pulseSprite.gameObject);
+                }
             }
         }
- 
-        private static void ReskinHUDRecursive(Transform parent)
+
+        private static bool hudDumped = false;
+        private static void DumpHUDStructure(GameObject hudCanvas)
         {
-            if (parent == null) return;
- 
-            var sr = parent.GetComponent<SpriteRenderer>();
-            if (sr != null && sr.sprite != null && sr.sprite.texture != null)
+            if (hudDumped) return;
+            try
             {
-                string texName = sr.sprite.texture.name;
- 
-                if (texName.IndexOf("HitPt", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    texName.IndexOf("Hit_Pt", StringComparison.OrdinalIgnoreCase) >= 0)
+                BetterMultiplayer.Instance.Log("=== HUD CANVAS DUMP ===");
+                int idx = 0;
+                foreach (var s in hudCanvas.GetComponentsInChildren<tk2dSprite>(true))
                 {
-                    if (LocalHitPtTexture != null)
+                    if (s == null) continue;
+                    var def = s.GetCurrentSpriteDef();
+                    string matName = (def != null && def.material != null) ? def.material.name : "null";
+                    string texName = (def != null && def.material != null && def.material.mainTexture != null) ? def.material.mainTexture.name : "null";
+                    string colName = s.Collection != null ? s.Collection.name : "null";
+                    // tk2d often uses a per-sprite material instance. Check it too.
+                    string miName = "null";
+                    string miTex = "null";
+                    if (def != null && def.materialInst != null)
                     {
-                        var block = new MaterialPropertyBlock();
-                        sr.GetPropertyBlock(block);
-                        block.SetTexture("_MainTex", LocalHitPtTexture);
-                        sr.SetPropertyBlock(block);
+                        miName = def.materialInst.name;
+                        if (def.materialInst.mainTexture != null) miTex = def.materialInst.mainTexture.name;
                     }
-                    else
-                    {
-                        sr.SetPropertyBlock(null);
-                    }
+                    BetterMultiplayer.Instance.Log($"  [tk2d] #{idx++} '{s.gameObject.name}' col='{colName}' mat='{matName}' tex='{texName}' matInst='{miName}' miTex='{miTex}'");
                 }
-                else if (texName.IndexOf("Deathpt", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    texName.IndexOf("Death_Pt", StringComparison.OrdinalIgnoreCase) >= 0)
+                int sidx = 0;
+                foreach (var sr in hudCanvas.GetComponentsInChildren<SpriteRenderer>(true))
                 {
-                    if (LocalDeathPtTexture != null)
-                    {
-                        var block = new MaterialPropertyBlock();
-                        sr.GetPropertyBlock(block);
-                        block.SetTexture("_MainTex", LocalDeathPtTexture);
-                        sr.SetPropertyBlock(block);
-                    }
-                    else
-                    {
-                        sr.SetPropertyBlock(null);
-                    }
+                    if (sr == null) continue;
+                    string texName = (sr.sprite != null && sr.sprite.texture != null) ? sr.sprite.texture.name : "null";
+                    BetterMultiplayer.Instance.Log($"  [SR ] #{sidx++} '{sr.gameObject.name}' tex='{texName}'");
                 }
-                else if (texName.IndexOf("liquid", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    if (LocalLiquidTexture != null)
-                    {
-                        var block = new MaterialPropertyBlock();
-                        sr.GetPropertyBlock(block);
-                        block.SetTexture("_MainTex", LocalLiquidTexture);
-                        sr.SetPropertyBlock(block);
-                    }
-                    else
-                    {
-                        sr.SetPropertyBlock(null);
-                    }
-                }
-                else if (texName.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    texName.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    texName.IndexOf("orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    texName.IndexOf("vessel", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    if (LocalOrbFullTexture != null)
-                    {
-                        var block = new MaterialPropertyBlock();
-                        sr.GetPropertyBlock(block);
-                        block.SetTexture("_MainTex", LocalOrbFullTexture);
-                        sr.SetPropertyBlock(block);
-                    }
-                    else
-                    {
-                        sr.SetPropertyBlock(null);
-                    }
-                }
-                else if (texName.IndexOf("hud", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    texName.IndexOf("health", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    texName.IndexOf("geo", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    texName.IndexOf("heart", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    texName.IndexOf("lifeblood", StringComparison.OrdinalIgnoreCase) >= 0)
-                {
-                    if (LocalHUDTexture != null)
-                    {
-                        var block = new MaterialPropertyBlock();
-                        sr.GetPropertyBlock(block);
-                        block.SetTexture("_MainTex", LocalHUDTexture);
-                        sr.SetPropertyBlock(block);
-                    }
-                    else
-                    {
-                        sr.SetPropertyBlock(null);
-                    }
-                }
+                BetterMultiplayer.Instance.Log("=== END HUD DUMP ===");
+                hudDumped = true;
             }
-
-            for (int i = 0; i < parent.childCount; i++)
+            catch (Exception ex)
             {
-                ReskinHUDRecursive(parent.GetChild(i));
+                BetterMultiplayer.Instance.LogError("Error dumping HUD: " + ex);
             }
         }
-
+ 
         private static Sprite[] originalSpriteList;
         private static Sprite originalUnbreakableHeart;
         private static Sprite originalUnbreakableGreed;
@@ -1029,20 +1067,17 @@ namespace BetterMultiplayer
 
                 if (!isRemote)
                 {
-                    // Check local liquid first by GameObject name to apply textures individually
-                    if (name.IndexOf("liquid", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        ApplyHUDTexture(__instance, SkinManager.LocalLiquidTexture);
-                        return;
-                    }
-                    // Check local orb/vessel
-                    if (name.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        name.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        name.IndexOf("vessel", StringComparison.OrdinalIgnoreCase) >= 0)
-                    {
-                        ApplyHUDTexture(__instance, SkinManager.LocalOrbFullTexture);
-                        return;
-                    }
+                    // NOTE: the previous "liquid"/"vessel"/"orbfull"/"soul_orb"
+                    // texture overrides were REMOVED. Those names match HUD
+                    // children (Liquid, Vessel 1-4) and were overwriting the
+                    // shared material's mainTexture with LocalLiquidTexture /
+                    // LocalOrbFullTexture, which corrupted the entire HUD atlas
+                    // (Health 1-11, Geo Sprite, etc.) because they share the
+                    // same material. The level Liquid and the soul Orb Full
+                    // are now handled separately: Orb Full via the
+                    // SpriteRenderer replacement in UpdateHUDSkin, and the
+                    // level liquid is left as default (the HUD covers all
+                    // important liquid visuals via Hud.png).
                 }
 
                 if (__instance.Collection != null)
@@ -1050,7 +1085,11 @@ namespace BetterMultiplayer
                     string colName = __instance.Collection.name;
                     if (!string.IsNullOrEmpty(colName))
                     {
-                        // Ensure we do not apply the HUD skin to liquid or orb sprites, even if they are part of the HUD collection
+                        // Skip sprites whose GameObject name matches the old
+                        // HUD override patterns, even when they're in a
+                        // non-HUD collection. This prevents any leftover
+                        // override from firing on accidentally-matching
+                        // names.
                         if (name.IndexOf("liquid", StringComparison.OrdinalIgnoreCase) >= 0 ||
                             name.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 ||
                             name.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -1058,19 +1097,9 @@ namespace BetterMultiplayer
                         {
                             return;
                         }
-
-                        if (SkinManager.LocalHUDTexture != null && (
-                            colName.IndexOf("hud", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            colName.IndexOf("health", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            colName.IndexOf("geo", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            colName.IndexOf("heart", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            colName.IndexOf("lifeblood", StringComparison.OrdinalIgnoreCase) >= 0))
-                        {
-                            ApplyHUDTexture(__instance, SkinManager.LocalHUDTexture);
-                        }
                     }
                 }
- 
+
 
    
                 if (isRemote)
@@ -1203,27 +1232,37 @@ namespace BetterMultiplayer
 
         public static void ApplyHUDTexture(tk2dSprite sprite, Texture2D tex)
         {
-            if (sprite == null) return;
+            if (sprite == null || tex == null) return;
             var renderer = sprite.GetComponent<MeshRenderer>();
-            if (renderer != null)
+            if (renderer != null && renderer.sharedMaterial != null)
             {
                 renderer.SetPropertyBlock(null);
-                if (tex != null && renderer.sharedMaterial != null && renderer.sharedMaterial.mainTexture != tex)
+                if (renderer.sharedMaterial.mainTexture != tex)
                 {
-                    SkinManager.ReskinMaterial(renderer.sharedMaterial, tex);
+                    renderer.sharedMaterial.mainTexture = tex;
                 }
             }
-            if (tex != null)
+            if (sprite.Collection != null)
             {
-                if (sprite.Collection != null)
+                if (sprite.Collection.material != null && sprite.Collection.material.mainTexture != tex)
                 {
-                    SkinManager.ReskinCollection(sprite.Collection, tex);
+                    sprite.Collection.material.mainTexture = tex;
                 }
-                var def = sprite.GetCurrentSpriteDef();
-                if (def != null && def.material != null && def.material.mainTexture != tex)
+                if (sprite.Collection.materials != null)
                 {
-                    SkinManager.ReskinMaterial(def.material, tex);
+                    for (int i = 0; i < sprite.Collection.materials.Length; i++)
+                    {
+                        if (sprite.Collection.materials[i] != null && sprite.Collection.materials[i].mainTexture != tex)
+                        {
+                            sprite.Collection.materials[i].mainTexture = tex;
+                        }
+                    }
                 }
+            }
+            var def = sprite.GetCurrentSpriteDef();
+            if (def != null && def.material != null && def.material.mainTexture != tex)
+            {
+                def.material.mainTexture = tex;
             }
         }
     }
@@ -1276,6 +1315,33 @@ namespace BetterMultiplayer
             catch (Exception ex)
             {
                 BetterMultiplayer.Instance.LogError("Error in CharmIconList Start Patch: " + ex);
+            }
+        }
+    }
+
+    [HarmonyPatch(typeof(GeoControl), "Start")]
+    public static class GeoControl_Start_Patch
+    {
+        public static void Postfix(GeoControl __instance)
+        {
+            try
+            {
+                // The geo pickup animation lives in a SEPARATE material from the HUD
+                // sheet. Custom skins' Hud.png is the HUD atlas (2048x2048), but the
+                // geo animation frames are at different positions than the original
+                // atlas, so replacing the geo material with the user's Hud.png would
+                // make the animation show the wrong sprites (spiky / glitchy).
+                //
+                // The geo counter icon next to "631" lives in the HUD material and is
+                // therefore already covered by the Hud.png swap on "Health 1".
+                //
+                // Intentionally do nothing here. If a future skin provides a separate
+                // Geo.png, hook it up here.
+                return;
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in GeoControl Start Patch: " + ex);
             }
         }
     }
