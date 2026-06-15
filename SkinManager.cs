@@ -1467,6 +1467,180 @@ namespace BetterMultiplayer
                 list.spriteList[id - 1] = customSprite;
             }
         }
+
+        // ====================================================================
+        // PATH-BASED SKIN RESOLVER (Custom Knight style)
+        // ====================================================================
+
+        // Enqueue a sprite for path-based skin resolution. Called from
+        // tk2dSprite_Awake_Hook when any tk2dSprite wakes up.
+        public static void EnqueueSpriteForPathResolve(tk2dSprite sprite)
+        {
+            if (sprite == null) return;
+            if (PathResolveQueue.InFlight.Contains(sprite)) return;
+            PathResolveQueue.InFlight.Add(sprite);
+            PathResolveQueue.Pending.Enqueue(sprite);
+        }
+
+        // Substring rules mapping a sprite's scene+GameObject path to
+        // the correct skin texture. More-specific (longer) substrings
+        // are checked first so e.g. "Cloak" is matched before "Sprite".
+        //
+        // Format: a list of (pathFragment, textureProperty) where the
+        // property is set via reflection to SkinManager.Local*Texture
+        // or .Remote*Texture.
+        //
+        // The actual mapping is done in PathToSkinTexture below; this
+        // table is just the data.
+        private static readonly (string fragment, bool isRemote, SkinKind kind)[] PathRules = new[]
+        {
+            // Knight main + hit-recoil (any local name under HeroBox/ that
+            // isn't a more-specific effect). RecoilLeft, RecoilRight,
+            // RecoilDown, RecoilBack — all live at scene/HeroBox/, so
+            // matching this fragment picks them all up. The fallthrough
+            // at the bottom of PathToSkinTexture catches anything that
+            // matches the HeroBox fragment but no more specific rule.
+            ("HeroBox", false, SkinKind.Knight),
+            // Cloak
+            ("HeroBox/Cloak", false, SkinKind.Cloak),
+            ("Cloak", false, SkinKind.Cloak),
+            // Remote puppet
+            ("Remote_Player", true, SkinKind.Knight),
+            ("Remote_Player(Clone)", true, SkinKind.Knight),
+            ("RemotePlayerPuppet", true, SkinKind.Knight),
+            // Effects under HeroBox/Effects/
+            ("HeroBox/Effects/Hero Dash", false, SkinKind.Sprint),
+            ("HeroBox/Effects/Dash Effect", false, SkinKind.Sprint),
+            ("HeroBox/Effects/sprint_effect", false, SkinKind.Sprint),
+            ("HeroBox/Effects/sprint effect", false, SkinKind.Sprint),
+            ("HeroBox/Effects/Fireball", false, SkinKind.VS),
+            ("HeroBox/Effects/Vengeful Spirit", false, SkinKind.VS),
+            ("HeroBox/Effects/Fireball2", false, SkinKind.VoidSpells),
+            ("HeroBox/Effects/Shadow Soul", false, SkinKind.VoidSpells),
+            ("HeroBox/Effects/Shade Soul", false, SkinKind.VoidSpells),
+            ("HeroBox/Effects/Howling Wraiths", false, SkinKind.Wraiths),
+            ("HeroBox/Effects/Abyss Shriek", false, SkinKind.Shriek),
+            ("HeroBox/Effects/Abyss Scream", false, SkinKind.Shriek),
+            ("HeroBox/Effects/Hollow Shade", false, SkinKind.Shade),
+            // Wings (dJumpWingsPrefab is spawned under HeroBox/Effects/)
+            ("dJump Wings Prefab", false, SkinKind.Wings),
+            ("dJumpWingsPrefab", false, SkinKind.Wings),
+            ("dJumpWings", false, SkinKind.Wings),
+            ("dJumpFeathers", false, SkinKind.Wings),
+            ("dJumpFlash", false, SkinKind.Wings),
+        };
+
+        private enum SkinKind
+        {
+            Knight, Cloak, VS, Wings, Sprint, VoidSpells, Wraiths, Shriek, Shade, Liquid, HitPt, DeathPt, Skip
+        }
+
+        // Resolve a sprite's path to a Texture2D. Returns null if no
+        // rule matches (caller should leave the sprite alone).
+        private static Texture2D ResolveSkin(string path, bool isRemote)
+        {
+            if (string.IsNullOrEmpty(path)) return null;
+
+            // 1) Find the first rule whose fragment appears in the path.
+            for (int i = 0; i < PathRules.Length; i++)
+            {
+                var rule = PathRules[i];
+                if (rule.isRemote != isRemote) continue;
+                if (path.IndexOf(rule.fragment, StringComparison.OrdinalIgnoreCase) < 0) continue;
+                return GetSkinTexture(rule.kind, isRemote);
+            }
+            return null;
+        }
+
+        private static Texture2D GetSkinTexture(SkinKind kind, bool isRemote)
+        {
+            if (isRemote)
+            {
+                switch (kind)
+                {
+                    case SkinKind.Knight:    return RemoteSkinTexture;
+                    case SkinKind.Cloak:     return RemoteCloakTexture;
+                    case SkinKind.VS:         return RemoteVSTexture;
+                    case SkinKind.Wings:      return RemoteWingsTexture;
+                    case SkinKind.Sprint:     return RemoteSprintTexture;
+                    case SkinKind.VoidSpells: return RemoteVoidSpellsTexture;
+                    case SkinKind.Wraiths:    return RemoteWraithsTexture;
+                    case SkinKind.Shriek:     return RemoteShriekTexture;
+                    case SkinKind.Shade:      return RemoteShadeTexture;
+                    default:                  return null;
+                }
+            }
+            else
+            {
+                switch (kind)
+                {
+                    case SkinKind.Knight:    return LocalSkinTexture;
+                    case SkinKind.Cloak:     return LocalCloakTexture;
+                    case SkinKind.VS:         return LocalVSTexture;
+                    case SkinKind.Wings:      return LocalWingsTexture;
+                    case SkinKind.Sprint:     return LocalSprintTexture;
+                    case SkinKind.VoidSpells: return LocalVoidSpellsTexture;
+                    case SkinKind.Wraiths:    return LocalWraithsTexture;
+                    case SkinKind.Shriek:     return LocalShriekTexture;
+                    case SkinKind.Shade:      return LocalShadeTexture;
+                    default:                  return null;
+                }
+            }
+        }
+
+        // Drains the pending queue. Each drained sprite gets its path
+        // resolved to a skin texture and the texture is applied via the
+        // existing ApplyTexture pipeline. Called every frame from
+        // BetterMultiplayerMenu.LateUpdate (BepInEx doesn't expose
+        // coroutines, so we just iterate from a MonoBehaviour).
+        public static void DrainPathResolveQueue()
+        {
+            int n = PathResolveQueue.Pending.Count;
+            if (n == 0) return;
+            for (int i = 0; i < n; i++)
+            {
+                if (PathResolveQueue.Pending.Count == 0) break;
+                var sprite = PathResolveQueue.Pending.Dequeue();
+                PathResolveQueue.InFlight.Remove(sprite);
+                if (sprite == null || !sprite) continue;
+                var marker = sprite.GetComponent<GlobalSwapMarker>();
+                if (marker == null || string.IsNullOrEmpty(marker.originalPath)) continue;
+                // HUD opt-out: never skin anything under Hud Canvas
+                if (sprite.transform != null)
+                {
+                    Transform t = sprite.transform;
+                    while (t != null)
+                    {
+                        if (t.name == "Hud Canvas") { t = null; break; }
+                        if (t.name == "Hud Canvas" || (t.name != null && t.name.IndexOf("HUD", StringComparison.OrdinalIgnoreCase) >= 0))
+                        {
+                            // Found a HUD ancestor — skip
+                            break;
+                        }
+                        t = t.parent;
+                    }
+                    if (t != null && t.name == "Hud Canvas") continue;
+                }
+                if (sprite.Collection != null)
+                {
+                    string colName = sprite.Collection.name;
+                    if (!string.IsNullOrEmpty(colName) &&
+                        (colName.IndexOf("HUD", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         colName.IndexOf("Soulorb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         colName.IndexOf("Charm Blocker", StringComparison.OrdinalIgnoreCase) >= 0))
+                    {
+                        continue;
+                    }
+                }
+                bool isRemote = marker.originalPath.StartsWith("Remote_", StringComparison.OrdinalIgnoreCase)
+                                || sprite.gameObject.name.StartsWith("Remote_", StringComparison.OrdinalIgnoreCase);
+                Texture2D tex = ResolveSkin(marker.originalPath, isRemote);
+                if (tex != null)
+                {
+                    tk2dSprite_Awake_Patch.ApplyTexture(sprite, tex);
+                }
+            }
+        }
     }
  
     [HarmonyPatch(typeof(tk2dSprite), "Awake")]
@@ -2102,6 +2276,133 @@ namespace BetterMultiplayer
             {
                 BetterMultiplayer.Instance.LogError("Error in GeoControl Start Patch: " + ex);
             }
+        }
+    }
+
+    // ====================================================================
+    // PATH-BASED SKIN RESOLVER (Custom Knight-style)
+    // ====================================================================
+    //
+    // The existing Postfix system matches sprites by local GameObject name
+    // (e.g. "Sprite", "Cloak", "dJumpWings"). That works for the main
+    // idle sprites but fails for the hit-animation sprites (RecoilLeft,
+    // RecoilRight, RecoilDown, etc.) because they have different local
+    // names but live at the same hierarchy path as the main knight sprite.
+    //
+    // Custom Knight's approach (which I confirmed by reading their source)
+    // is path-based: every tk2dSprite gets a GlobalSwapMarker carrying
+    // its full scene+GameObject-path, and a coroutine processes the
+    // sprite queue, resolving the path to the right skin texture via
+    // substring match against the path. This catches the recoil sprites
+    // (which all live under scene/HeroBox/), the wing/flash/feather
+    // sprites (under scene/HeroBox/Effects/dJump Wings Prefab/),
+    // etc., regardless of their local name.
+    //
+    // Implementation summary:
+    //   1. GlobalSwapMarker MonoBehaviour — stores originalPath.
+    //   2. tk2dSprite_Awake_Hook — adds the marker + enqueues the sprite.
+    //   3. PathToSkinTexture — substring rules: which path fragments map
+    //      to which Local* texture.
+    //   4. SkinQueueProcessor — coroutine drained every frame in
+    //      BetterMultiplayerMenu.LateUpdate (BepInEx has no coroutine API
+    //      of its own; we just iterate the queue from a MonoBehaviour).
+
+    /// <summary>
+    /// MonoBehaviour attached to every tk2dSprite we skin. Stores the
+    /// sprite's original scene+GameObject path so the coroutine can
+    /// look it up and re-skin it even if the sprite's local name
+    /// changes (e.g. during a hit recoil animation).
+    /// </summary>
+    public class GlobalSwapMarker : MonoBehaviour
+    {
+        public string originalPath = "";
+        public bool optOut = false;
+    }
+
+    /// <summary>
+    /// Harmony patch on tk2dSprite.Awake. Attaches a GlobalSwapMarker
+    /// (with the full scene+hierarchy path) and enqueues the sprite
+    /// for path-based skin resolution.
+    /// </summary>
+    [HarmonyPatch(typeof(tk2dSprite), "Awake")]
+    public static class tk2dSprite_Awake_Hook
+    {
+        public static void Postfix(tk2dSprite __instance)
+        {
+            if (__instance == null || __instance.gameObject == null) return;
+            try
+            {
+                UnityEngine.SceneManagement.Scene sc = __instance.gameObject.scene;
+                string sceneName = sc.IsValid() ? sc.name : "";
+                string goPath = __instance.gameObject.GetPath(true);
+                string fullPath = string.IsNullOrEmpty(sceneName)
+                    ? goPath
+                    : sceneName + "/" + goPath;
+                var marker = __instance.gameObject.GetComponent<GlobalSwapMarker>();
+                if (marker == null) marker = __instance.gameObject.AddComponent<GlobalSwapMarker>();
+                if (string.IsNullOrEmpty(marker.originalPath))
+                {
+                    marker.originalPath = fullPath;
+                }
+                SkinManager.EnqueueSpriteForPathResolve(__instance);
+            }
+            catch (Exception ex)
+            {
+                if (BetterMultiplayer.Instance != null)
+                {
+                    BetterMultiplayer.Instance.LogError("Error in tk2dSprite_Awake_Hook: " + ex);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Queue + drain state for path-based skin resolution. The
+    /// BetterMultiplayerMenu LateUpdate calls DrainQueue() every
+    /// frame, which pops sprites and runs the PathToSkinTexture
+    /// resolver on them.
+    /// </summary>
+    public static class PathResolveQueue
+    {
+        public static readonly System.Collections.Generic.Queue<tk2dSprite> Pending =
+            new System.Collections.Generic.Queue<tk2dSprite>();
+        public static readonly System.Collections.Generic.HashSet<tk2dSprite> InFlight =
+            new System.Collections.Generic.HashSet<tk2dSprite>();
+        public static int DrainCount = 0;
+    }
+
+    /// <summary>
+    /// Walks up a GameObject's transform chain and builds a slash-
+    /// separated path string (e.g. "HeroBox/Effects/dJumpWings").
+    /// If useTopmost is true (the default), the path INCLUDES the
+    /// topmost ancestor. Hollow Knight's knight prefab is rooted
+    /// at a "_GameManager" or "Knight" top-level GO, which we
+    /// generally want to keep out of the path because it varies
+    /// per scene; callers can pass useTopmost=false to drop the
+    /// topmost ancestor and get a stable middle of the hierarchy.
+    /// </summary>
+    public static class GameObjectPathExtensions
+    {
+        public static string GetPath(this GameObject go, bool useTopmost = true)
+        {
+            if (go == null) return "";
+            var stack = new System.Collections.Generic.Stack<string>();
+            Transform t = go.transform;
+            while (t != null)
+            {
+                stack.Push(t.name);
+                t = t.parent;
+            }
+            if (!useTopmost && stack.Count > 0) stack.Pop();
+            var sb = new System.Text.StringBuilder();
+            bool first = true;
+            foreach (var name in stack)
+            {
+                if (!first) sb.Append('/');
+                sb.Append(name);
+                first = false;
+            }
+            return sb.ToString();
         }
     }
 }

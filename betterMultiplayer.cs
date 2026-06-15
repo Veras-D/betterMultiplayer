@@ -322,6 +322,13 @@ namespace BetterMultiplayer
             // is the only way to skin the monarch-wings flash + feathers.
             // Throttled to once every 30 frames inside the method.
             SkinManager.ScanAndSkinDJumpFlashes();
+            // Drain the path-based skin resolution queue. This is the
+            // Custom Knight-style coroutine-equivalent: any tk2dSprite
+            // that woke up this frame (including the hit-recoil sprites
+            // RecoilLeft/Right/Down, which have different local names
+            // than the main knight sprite) gets its path resolved to
+            // the right skin texture and the texture is applied.
+            SkinManager.DrainPathResolveQueue();
         }
 
         private void SendPosition()
