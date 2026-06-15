@@ -1691,6 +1691,25 @@ namespace BetterMultiplayer
                 blockDirty = true;
             }
             if (blockDirty) renderer.SetPropertyBlock(block);
+
+            // === X-AXIS ALIGNMENT (WINGS ONLY) ===
+            // The monarch-wings Custom Knight skins render the wing
+            // sprite at a different X position than the character
+            // (the wing lands too far to the left). Force the wing
+            // sprite's X to match the character's X every frame.
+            // This is applied AFTER the material/texture work above
+            // so the per-frame guard always has the freshest state.
+            if (xFlippedRenderers.Contains(renderer) && sprite != null
+                && HeroController.instance != null && HeroController.instance.transform != null)
+            {
+                float charX = HeroController.instance.transform.position.x;
+                Vector3 p = sprite.transform.position;
+                if (System.Math.Abs(p.x - charX) > 0.001f)
+                {
+                    p.x = charX;
+                    sprite.transform.position = p;
+                }
+            }
         }
 
         // Walks the whole tracked-sprites dictionary and re-applies
