@@ -121,7 +121,11 @@ namespace BetterMultiplayer
                     LocalHUDTexture = null;
                 }
                 LocalVSTexture = LoadExtraTexture(skinName, "VS.png");
-                LocalWingsTexture = LoadExtraTexture(skinName, "Wings.png");
+                // Wings.png: the Custom Knight skin convention has the
+                // monarch-wing art authored mirrored relative to the
+                // in-game sprite (the wing tip points the wrong way on
+                // the X axis). Mirror it back at runtime.
+                LocalWingsTexture = LoadExtraTexture(skinName, "Wings.png", flipHorizontal: true);
                 LocalSprintTexture = LoadExtraTexture(skinName, "Sprint.png") ?? LoadExtraTexture(skinName, "sprint.png");
                 LocalVoidSpellsTexture = LoadExtraTexture(skinName, "VoidSpells.png") ?? LoadExtraTexture(skinName, "voidSpells.png");
                 LocalWraithsTexture = LoadExtraTexture(skinName, "Wraiths.png") ?? LoadExtraTexture(skinName, "wraiths.png");
@@ -176,7 +180,7 @@ namespace BetterMultiplayer
                     tex = GetCachedTexture(skinName, "Knight.png");
                     cloak = LoadExtraTexture(skinName, "Cloak.png");
                     vs = LoadExtraTexture(skinName, "VS.png");
-                    wings = LoadExtraTexture(skinName, "Wings.png");
+                    wings = LoadExtraTexture(skinName, "Wings.png", flipHorizontal: true);
                     sprint = LoadExtraTexture(skinName, "Sprint.png") ?? LoadExtraTexture(skinName, "sprint.png");
                     voidSpells = LoadExtraTexture(skinName, "VoidSpells.png") ?? LoadExtraTexture(skinName, "voidSpells.png");
                     wraiths = LoadExtraTexture(skinName, "Wraiths.png") ?? LoadExtraTexture(skinName, "wraiths.png");
@@ -376,7 +380,7 @@ namespace BetterMultiplayer
             }
         }
 
-        private static Texture2D LoadTexture(string filePath, bool flipVertical = false)
+        private static Texture2D LoadTexture(string filePath, bool flipVertical = false, bool flipHorizontal = false)
         {
             try
             {
@@ -410,6 +414,15 @@ namespace BetterMultiplayer
                     {
                         tex = FlipTextureVertically(tex);
                     }
+                    // Wings.png: the Custom Knight skin convention has
+                    // the monarch-wing art authored mirrored relative to
+                    // the in-game sprite (the wing tip points the wrong
+                    // way on the X axis). Mirror it back at runtime so
+                    // the wings render facing the correct direction.
+                    if (flipHorizontal)
+                    {
+                        tex = FlipTextureHorizontally(tex);
+                    }
                     tex.filterMode = FilterMode.Bilinear;
                     tex.anisoLevel = 4;
                     tex.wrapMode = TextureWrapMode.Clamp;
@@ -434,6 +447,30 @@ namespace BetterMultiplayer
                 for (int x = 0; x < w; x++)
                 {
                     flipped.SetPixel(x, h - 1 - y, pixels[y * w + x]);
+                }
+            }
+            flipped.Apply();
+            return flipped;
+        }
+
+        // Mirror a texture on the X axis. Used for the monarch-wings
+        // Wings.png: the in-game wing animation in Hollow Knight was
+        // authored right-facing, but the Custom Knight skin
+        // convention has the wing art left-facing (because the skin
+        // authors hand-draw the wings to match the knight's idle
+        // pose). Without a horizontal flip, the wing appears
+        // mirrored — the wing tip points the wrong way.
+        private static Texture2D FlipTextureHorizontally(Texture2D original)
+        {
+            var pixels = original.GetPixels();
+            int w = original.width;
+            int h = original.height;
+            var flipped = new Texture2D(w, h, original.format, false);
+            for (int y = 0; y < h; y++)
+            {
+                for (int x = 0; x < w; x++)
+                {
+                    flipped.SetPixel(w - 1 - x, y, pixels[y * w + x]);
                 }
             }
             flipped.Apply();
@@ -526,16 +563,18 @@ namespace BetterMultiplayer
             return "Unknown";
         }
 
-        private static Texture2D GetCachedTexture(string skinName, string fileName, bool flipVertical = false)
+        private static Texture2D GetCachedTexture(string skinName, string fileName, bool flipVertical = false, bool flipHorizontal = false)
         {
             if (skinName == "Default") return null;
 
-            // The cached texture is keyed by filename only, so a flipVertical
-            // call against an already-cached, non-flipped texture (or vice
-            // versa) would return the wrong orientation. We append a
-            // suffix to the cache key to keep flipped and non-flipped
-            // copies separate.
-            string cacheKey = fileName + (flipVertical ? "|flip" : "");
+            // The cached texture is keyed by filename + flip flags, so a
+            // flipped call against an already-cached, non-flipped texture
+            // (or vice versa) would return the wrong orientation. We
+            // append suffixes to the cache key to keep all variants
+            // separate.
+            string cacheKey = fileName
+                + (flipVertical ? "|flip" : "")
+                + (flipHorizontal ? "|hflip" : "");
 
             if (!textureCache.TryGetValue(skinName, out var skinCache))
             {
@@ -554,7 +593,7 @@ namespace BetterMultiplayer
                 string fullPath = Path.Combine(skinPath, fileName);
                 if (File.Exists(fullPath))
                 {
-                    Texture2D tex = LoadTexture(fullPath, flipVertical);
+                    Texture2D tex = LoadTexture(fullPath, flipVertical, flipHorizontal);
                     if (tex != null)
                     {
                         skinCache[cacheKey] = tex;
@@ -570,9 +609,9 @@ namespace BetterMultiplayer
             return null;
         }
 
-        private static Texture2D LoadExtraTexture(string skinName, string fileName, bool flipVertical = false)
+        private static Texture2D LoadExtraTexture(string skinName, string fileName, bool flipVertical = false, bool flipHorizontal = false)
         {
-            return GetCachedTexture(skinName, fileName, flipVertical);
+            return GetCachedTexture(skinName, fileName, flipVertical, flipHorizontal);
         }
 
         public static void ForceUpdateAllSprites()
