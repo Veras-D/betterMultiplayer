@@ -1571,12 +1571,47 @@ namespace BetterMultiplayer
                     var sprite = child.GetComponent<tk2dSprite>();
                     if (sprite == null) continue;
                     var def = sprite.GetCurrentSpriteDef();
-                    if (def == null || def.material == null) continue;
-                    if (def.material.mainTexture == t.tex) continue; // already set
-                    def.material.mainTexture = t.tex;
-                    if (BetterMultiplayer.Instance != null)
+                    if (def == null) continue;
+
+                    // === KEY: set on the COLLECTION's shared material ===
+                    // Custom Knight only sets the per-sprite material
+                    // (def.material), but in Hollow Knight most of the
+                    // spell reference sprites (Scr Heads, Scr Base,
+                    // etc.) are INACTIVE (activeSelf=false) at the
+                    // title screen and during most of gameplay — the
+                    // game only activates them when the player casts
+                    // the spell. When that happens, the game often
+                    // creates a fresh material instance for the
+                    // activated sprite, and our texture-set on the
+                    // per-sprite material is gone.
+                    //
+                    // The collection's shared material
+                    // (sprite.Collection.material) is the master copy
+                    // that all sprites in the collection — including
+                    // the pooled clones in GlobalPool/ — actually use
+                    // at render time. Setting mainTexture on it
+                    // updates every sprite in the collection
+                    // simultaneously, and it survives sprite
+                    // activation/deactivation cycles.
+                    //
+                    // We also set the per-sprite material as a
+                    // belt-and-braces fallback in case any sprite
+                    // has a unique material instance for some
+                    // reason.
+                    if (sprite.Collection != null && sprite.Collection.material != null)
                     {
-                        BetterMultiplayer.Instance.Log($"[ApplySharedMaterialSkins] Set {t.paths[j]}.material.mainTexture = {t.tex.name}");
+                        if (sprite.Collection.material.mainTexture != t.tex)
+                        {
+                            sprite.Collection.material.mainTexture = t.tex;
+                            if (BetterMultiplayer.Instance != null)
+                            {
+                                BetterMultiplayer.Instance.Log($"[ApplySharedMaterialSkins] Set {t.paths[j]}.Collection.material.mainTexture = {t.tex.name} (col='{sprite.Collection.name}')");
+                            }
+                        }
+                    }
+                    if (def.material != null && def.material.mainTexture != t.tex)
+                    {
+                        def.material.mainTexture = t.tex;
                     }
                 }
             }
