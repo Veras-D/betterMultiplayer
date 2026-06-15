@@ -2016,35 +2016,51 @@ namespace BetterMultiplayer
         }
 
         // Returns true if the sprite is currently showing a
-        // recoil / hit-taken sprite (RecoilLeft, RecoilRight,
-        // RecoilDown, etc.). The recoil sprites in Hollow Knight
-        // live in the knight's collection and the game just changes
-        // spriteId to swap them in. If the user's Knight.png doesn't
-        // have the recoil frames at the right atlas positions (which
-        // is true for most Custom Knight skins), the mod-applied skin
-        // texture would show the wrong pixels — typically the idle
-        // frame, which looks like the default skin. To avoid that
-        // we revert the renderer to the original atlas0 material for
-        // the duration of the recoil, so the vanilla hit animation
-        // plays correctly even when the skin doesn't have recoil
-        // frames packed at the right positions.
-        private static bool IsShowingRecoilSprite(tk2dSprite sprite)
+        // recoil / hit-taken / stun sprite. Hollow Knight's full
+        // hit sequence on heavy damage (e.g. from spikes that
+        // teleport the knight to a safe spot) is:
+        //
+        //   1. RecoilLeft / RecoilRight / RecoilDown — quick
+        //      knockback
+        //   2. Land / HardLand — landing on the ground
+        //   3. Down / Stun / Dazed / Hurt — lying on the ground
+        //   4. Wake / GetUp — getting back up
+        //
+        // The user's skin PNGs don't have these frames at the
+        // right atlas positions, so the mod-applied skin
+        // texture would show the wrong pixels (typically the
+        // idle frame). To avoid that we revert the renderer to
+        // the original atlas0 material for the duration of the
+        // hit sequence, so the vanilla hit animation plays
+        // correctly. The Wake / GetUp sprite names are
+        // intentionally NOT included — once the knight is back
+        // up and transitioning to idle, the skin should show
+        // through again.
+        private static bool IsShowingHitSprite(tk2dSprite sprite)
         {
             if (sprite == null) return false;
             var def = sprite.GetCurrentSpriteDef();
             if (def == null) return false;
             string defName = def.name;
             if (string.IsNullOrEmpty(defName)) return false;
-            return defName.IndexOf("Recoil", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (defName.IndexOf("Recoil", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (defName.IndexOf("HardLand", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (defName.IndexOf("SoftLand", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (defName.Equals("Land", StringComparison.OrdinalIgnoreCase)) return true;
+            if (defName.IndexOf("Stun", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (defName.IndexOf("Dazed", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (defName.IndexOf("Hurt", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            if (defName.IndexOf("Down", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            return false;
         }
 
         // Reverts a knight renderer to the original atlas0 material
-        // for the duration of a recoil sprite. Idempotent. Called
-        // from both ApplyTexture and EnsureSkinStaysApplied so the
-        // revert happens on the same frame the spriteId changes to
-        // a recoil sprite and stays reverted until the spriteId
-        // changes back to a non-recoil sprite.
-        private static void RevertForRecoil(tk2dSprite sprite)
+        // for the duration of a hit/recoil/stun sprite. Idempotent.
+        // Called from both ApplyTexture and EnsureSkinStaysApplied so
+        // the revert happens on the same frame the spriteId changes
+        // to a hit sprite and stays reverted until the spriteId
+        // changes back to a non-hit sprite.
+        private static void RevertForHitSprite(tk2dSprite sprite)
         {
             if (sprite == null) return;
             var renderer = sprite.GetComponent<MeshRenderer>();
@@ -2056,7 +2072,7 @@ namespace BetterMultiplayer
                 renderer.sharedMaterial = original;
             }
             // Also clear the unique-instance entry so the next
-            // non-recoil frame will rebuild it from the original.
+            // non-hit frame will rebuild it from the original.
             Material inst;
             if (uniqueMaterialInstances.TryGetValue(renderer, out inst) && inst != null)
             {
@@ -2090,9 +2106,9 @@ namespace BetterMultiplayer
             // skinnedSprites entry is kept so when the spriteId
             // changes back to a non-recoil sprite we re-apply the
             // skin on the next frame.
-            if (IsShowingRecoilSprite(sprite))
+            if (IsShowingHitSprite(sprite))
             {
-                RevertForRecoil(sprite);
+                RevertForHitSprite(sprite);
                 return;
             }
 
@@ -2434,9 +2450,9 @@ namespace BetterMultiplayer
             // pixels (typically the idle frame, which looks like the
             // default skin). The vanilla hit animation is the
             // correct behavior in this case.
-            if (IsShowingRecoilSprite(sprite))
+            if (IsShowingHitSprite(sprite))
             {
-                RevertForRecoil(sprite);
+                RevertForHitSprite(sprite);
                 return;
             }
 
