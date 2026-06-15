@@ -1662,41 +1662,37 @@ namespace BetterMultiplayer
             ("HeroBox/Effects/Dash Effect", false, SkinKind.Sprint),
             ("HeroBox/Effects/sprint_effect", false, SkinKind.Sprint),
             ("HeroBox/Effects/sprint effect", false, SkinKind.Sprint),
-            ("HeroBox/Effects/Fireball", false, SkinKind.VS),
-            ("HeroBox/Effects/Vengeful Spirit", false, SkinKind.VS),
-            ("HeroBox/Effects/Fireball2", false, SkinKind.VoidSpells),
-            ("HeroBox/Effects/Shadow Soul", false, SkinKind.VoidSpells),
-            ("HeroBox/Effects/Shade Soul", false, SkinKind.VoidSpells),
-            ("HeroBox/Effects/Howling Wraiths", false, SkinKind.Wraiths),
-            ("HeroBox/Effects/Abyss Shriek", false, SkinKind.Shriek),
-            ("HeroBox/Effects/Abyss Scream", false, SkinKind.Shriek),
+            // === SPELL/EFFECT RULES REMOVED ===
+            // Spell sprites (Fireball, Fireball2, Scream, Quake, Howling
+            // Wraiths, Abyss Shriek) are now handled ENTIRELY by
+            // ApplySharedMaterialSkins above, which sets the texture on
+            // sprite.Collection.material — the collection's master shared
+            // material that all sprites in the collection (including
+            // pooled clones in GlobalPool/) use at render time.
+            //
+            // Keeping path-based rules for spells here was causing
+            // DOUBLE SKINNING: the resolver would create a unique
+            // material instance for each pooled clone (with the skin
+            // texture), while the shared material approach also set the
+            // collection's shared material. The renderer would end up
+            // with the unique instance, but other sprites in the same
+            // collection would still use the shared material. The
+            // result: some sprites showed the skin correctly, others
+            // showed the default atlas at the wrong Y position because
+            // their UVs were being applied to a different texture.
+            //
+            // Removing the rules lets the shared material approach
+            // be the single source of truth for spell skins.
             ("HeroBox/Effects/Hollow Shade", false, SkinKind.Shade),
-            // === GLOBAL POOL SPELL SPRITES ===
-            // In Hollow Knight, spell projectiles (Fireball,
-            // Fireball2, Quake, Scream, etc.) are pooled in the
-            // _GameManager/GlobalPool GameObject under
-            // DontDestroyOnLoad. The pooled clones are spawned
-            // (Instantiate'd) when the game needs them, so their
-            // paths are:
-            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball(Clone)
-            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball2 Spiral(Clone)
-            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball2 Top(Clone)
-            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball Top(Clone)
-            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball Blast
-            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball2 Blast
-            //   DontDestroyOnLoad/_GameManager/GlobalPool/Quake ...
-            // The HeroBox/Effects rules above never match these
-            // (different parent path), so the spells stayed on the
-            // vanilla atlas — only the empty Knight.png path
-            // matched. With the rules below, every pooled spell
-            // clone and its child sprites get the right skin
-            // texture.
-            ("GlobalPool/Fireball2", false, SkinKind.VoidSpells),
-            ("GlobalPool/Fireball", false, SkinKind.VS),
-            ("GlobalPool/Quake", false, SkinKind.Skip),
-            ("GlobalPool/Quake Effect", false, SkinKind.Skip),
-            ("GlobalPool/Scream", false, SkinKind.Wraiths),
-            ("GlobalPool/Shadow", false, SkinKind.VoidSpells),
+            // === GLOBAL POOL SPELL SPRITES REMOVED ===
+            // Same reason as above: spell sprites in GlobalPool/ are
+            // now handled entirely by ApplySharedMaterialSkins, which
+            // sets sprite.Collection.material.mainTexture once. The
+            // pooled clones (Fireball(Clone), Fireball2 Spiral(Clone),
+            // Scream Heads(Clone), etc.) all share that collection
+            // material at render time, so a single set on the
+            // collection is enough — no per-clone path matching
+            // needed.
             // Wings (dJumpWingsPrefab is spawned under HeroBox/Effects/)
             ("dJump Wings Prefab", false, SkinKind.Wings),
             ("dJumpWingsPrefab", false, SkinKind.Wings),
@@ -2335,35 +2331,23 @@ namespace BetterMultiplayer
                     {
                         ApplyTexture(__instance, SkinManager.RemoteShadeTexture);
                     }
-                    else if (SkinManager.RemoteVSTexture != null && 
-                        (name.Contains("Fireball") || name.Contains("Vengeful Spirit")))
-                    {
-                        ApplyTexture(__instance, SkinManager.RemoteVSTexture);
-                    }
+                    // Remote spell sprites (Fireball, Fireball2, Scream,
+                    // Quake, Howling Wraiths, Abyss Shriek) are now
+                    // handled by ApplySharedMaterialSkins. Per-sprite
+                    // ApplyTexture was causing double-skinning for
+                    // remote puppets too — the unique instance
+                    // competed with the collection's shared material.
+                    // (Local spell sprites were removed in the path
+                    // rules above for the same reason.)
                     else if (SkinManager.RemoteWingsTexture != null &&
                              (name == "dJumpWings" || name == "dJumpFlash" || name == "dJumpFeathers"))
                     {
                         ApplyTexture(__instance, SkinManager.RemoteWingsTexture);
                     }
-                    else if (SkinManager.RemoteSprintTexture != null && 
+                    else if (SkinManager.RemoteSprintTexture != null &&
                              (name.StartsWith("Remote_Dash Effect") || name.StartsWith("Remote_sprint_effect")))
                     {
                         ApplyTexture(__instance, SkinManager.RemoteSprintTexture);
-                    }
-                    else if (SkinManager.RemoteVoidSpellsTexture != null && 
-                             (name.Contains("Fireball2") || name.Contains("Shadow Soul") || name.Contains("Shade Soul")))
-                    {
-                        ApplyTexture(__instance, SkinManager.RemoteVoidSpellsTexture);
-                    }
-                    else if (SkinManager.RemoteWraithsTexture != null && 
-                             (name.Contains("Howling Wraiths") || name.Contains("Scream") || name.Contains("Wraiths")))
-                    {
-                        ApplyTexture(__instance, SkinManager.RemoteWraithsTexture);
-                    }
-                    else if (SkinManager.RemoteShriekTexture != null && 
-                             (name.Contains("Abyss Shriek") || name.Contains("Abyss Scream") || name.Contains("Shriek")))
-                    {
-                        ApplyTexture(__instance, SkinManager.RemoteShriekTexture);
                     }
                 }
                 else
@@ -2399,15 +2383,13 @@ namespace BetterMultiplayer
                             ApplyTexture(__instance, SkinManager.RemoteCloakTexture);
                         }
                     }
-                    // Local effects
+                    // Local effects — only Wings, Sprint, and Shade
+                    // remain. Spell sprites (Fireball, Fireball2,
+                    // Scream, Quake, Howling Wraiths, Abyss Shriek)
+                    // are handled by ApplySharedMaterialSkins.
                     else if (SkinManager.LocalShadeTexture != null && name.StartsWith("Hollow Shade"))
                     {
                         ApplyTexture(__instance, SkinManager.LocalShadeTexture);
-                    }
-                    else if (SkinManager.LocalVSTexture != null && 
-                        (name.StartsWith("Fireball") || name.StartsWith("Vengeful Spirit")))
-                    {
-                        ApplyTexture(__instance, SkinManager.LocalVSTexture);
                     }
                     else if (SkinManager.LocalWingsTexture != null &&
                              (name == "dJumpWings" || name == "dJumpFlash" || name == "dJumpFeathers"))
@@ -2423,25 +2405,10 @@ namespace BetterMultiplayer
                         // ScanAndSkinDJumpFlashes (which uses Sprite.Create).
                         ApplyTexture(__instance, SkinManager.LocalWingsTexture);
                     }
-                    else if (SkinManager.LocalSprintTexture != null && 
+                    else if (SkinManager.LocalSprintTexture != null &&
                              (name.StartsWith("Dash Effect") || name.StartsWith("sprint_effect")))
                     {
                         ApplyTexture(__instance, SkinManager.LocalSprintTexture);
-                    }
-                    else if (SkinManager.LocalVoidSpellsTexture != null && 
-                             (name.StartsWith("Fireball2") || name.StartsWith("Shadow Soul") || name.StartsWith("Shade Soul")))
-                    {
-                        ApplyTexture(__instance, SkinManager.LocalVoidSpellsTexture);
-                    }
-                    else if (SkinManager.LocalWraithsTexture != null && 
-                             (name.StartsWith("Howling Wraiths") || name.Contains("Scream") || name.Contains("Wraiths")))
-                    {
-                        ApplyTexture(__instance, SkinManager.LocalWraithsTexture);
-                    }
-                    else if (SkinManager.LocalShriekTexture != null && 
-                             (name.StartsWith("Abyss Shriek") || name.Contains("Abyss Scream") || name.Contains("Shriek")))
-                    {
-                        ApplyTexture(__instance, SkinManager.LocalShriekTexture);
                     }
                 }
             }
