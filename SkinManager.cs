@@ -865,59 +865,6 @@ namespace BetterMultiplayer
                     UnityEngine.Object.Destroy(pulseSprite.gameObject);
                 }
             }
-
-            // === Force-enable HUD MeshRenderers ===
-            // The visibility dump revealed EVERY HUD sprite's MeshRenderer
-            // reports rend=False. This is a Unity 6 quirk where
-            // MeshRenderer.enabled reads false even when the renderer is
-            // actually active. But the Health 2-11 GameObjects were
-            // showing the 'idle_v020000' sprite (same as Idle) instead
-            // of the proper 'health' sprite — meaning GetCurrentSpriteDef
-            // returned the wrong definition on Unity 6. We force-enable
-            // all HUD renderers and force-re-set the sprite on every
-            // GameObject to a valid sprite ID in its collection, which
-            // refreshes the mesh+material binding.
-            int forcedRend = 0;
-            int forcedSprite = 0;
-            foreach (var sprite in hudCanvas.GetComponentsInChildren<tk2dSprite>(true))
-            {
-                if (sprite == null) continue;
-                var rend = sprite.GetComponent<MeshRenderer>();
-                if (rend != null)
-                {
-                    if (!rend.enabled) { rend.enabled = true; forcedRend++; }
-                }
-                // Force a sprite reset using the FIRST valid sprite id
-                // from the collection. This refreshes the mesh+material
-                // binding on Unity 6 where GetCurrentSpriteDef may be
-                // returning a stale def.
-                if (sprite.Collection != null && sprite.Collection.spriteDefinitions != null
-                    && sprite.Collection.spriteDefinitions.Length > 0)
-                {
-                    int firstId = sprite.spriteId;
-                    if (firstId < 0 || firstId >= sprite.Collection.spriteDefinitions.Length)
-                    {
-                        // Find first valid definition with valid UVs
-                        for (int i = 0; i < sprite.Collection.spriteDefinitions.Length; i++)
-                        {
-                            var sd = sprite.Collection.spriteDefinitions[i];
-                            if (sd != null && sd.uvs != null && sd.uvs.Length >= 4
-                                && !string.IsNullOrEmpty(sd.name)
-                                && sd.name != "default")
-                            {
-                                sprite.SetSprite(sprite.Collection, i);
-                                firstId = i;
-                                forcedSprite++;
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-            if (forcedRend > 0 || forcedSprite > 0)
-            {
-                BetterMultiplayer.Instance.Log($"[UpdateHUDSkin] Forced {forcedRend} MeshRenderers enabled, {forcedSprite} sprites reset to first valid definition");
-            }
         }
 
         private static bool hudDumped = false;
