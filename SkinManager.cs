@@ -1396,6 +1396,14 @@ namespace BetterMultiplayer
         private static readonly System.Collections.Generic.Dictionary<tk2dSprite, Texture2D> skinnedSprites
             = new System.Collections.Generic.Dictionary<tk2dSprite, Texture2D>();
 
+        // Cache of the ORIGINAL shared material the renderer had before
+        // we created a unique instance for it. We keep this so we can
+        // restore the renderer's material on skin unload, and so we
+        // never accidentally leak a material instance if the same
+        // renderer gets re-skinned.
+        private static readonly System.Collections.Generic.Dictionary<MeshRenderer, Material> originalSharedMaterials
+            = new System.Collections.Generic.Dictionary<MeshRenderer, Material>();
+
         // Called every frame on every tk2dSprite. For sprites the mod
         // has skinned, verifies the sprite's MeshRenderer is still
         // rendering with our _MainTex. If anything in the game has
@@ -1418,12 +1426,45 @@ namespace BetterMultiplayer
             var renderer = sprite.GetComponent<MeshRenderer>();
             if (renderer == null) return;
 
+            // === PRIMARY CHECK: the unique material instance ===
+            // ApplyTexture creates a unique material instance for this
+            // sprite on first skin and stashes it on the renderer. As
+            // long as the renderer's sharedMaterial is still our unique
+            // instance with our texture, the skin is showing. The
+            // tk2d damage flash only writes to a MaterialPropertyBlock,
+            // so it cannot touch the material's mainTexture — making
+            // this far more robust than a property-block-only approach.
+            if (renderer.sharedMaterial != null)
+            {
+                if (renderer.sharedMaterial.mainTexture != expected)
+                {
+                    renderer.sharedMaterial.mainTexture = expected;
+                }
+            }
+            // If the renderer has been reset to its ORIGINAL shared
+            // material (e.g. a scene transition rebuilt the sprite),
+            // re-install our unique instance and re-apply the texture.
+            else
+            {
+                Material original;
+                if (originalSharedMaterials.TryGetValue(renderer, out original) && original != null)
+                {
+                    Material inst = new Material(original);
+                    inst.name = original.name + " (BetterMultiplayer Skin)";
+                    inst.mainTexture = expected;
+                    renderer.sharedMaterial = inst;
+                }
+            }
+
+            // === SECONDARY CHECK: the MaterialPropertyBlock ===
+            // The game might have set a property-block override for
+            // color tint (damage flash) but NOT for the texture. If
+            // the property block's _MainTex is wrong, restore it.
             if (block == null) block = new MaterialPropertyBlock();
             renderer.GetPropertyBlock(block);
             Texture current = block.GetTexture("_MainTex");
             if (current != expected)
             {
-                // Game overwrote our texture (damage flash, etc.) — restore.
                 block.SetTexture("_MainTex", expected);
                 renderer.SetPropertyBlock(block);
             }
@@ -1641,6 +1682,45 @@ namespace BetterMultiplayer
             var renderer = sprite.GetComponent<MeshRenderer>();
             if (renderer != null)
             {
+                // Create a UNIQUE material instance for this renderer on
+                // first skin so our texture lives on the material itself
+                // rather than in a MaterialPropertyBlock. This is critical
+                // for surviving the tk2d damage flash: the damage flash
+                // uses a MaterialPropertyBlock to tint the sprite white,
+                // and a property-block-only skin is invisible for one
+                // frame after the flash ends because the property block
+                // has been reset. With a unique material instance, the
+                // skin's _MainTex is part of the material and cannot be
+                // clobbered by a property-block tint.
+                //
+                // The instance is cached on the renderer; subsequent
+                // calls reuse it. If the renderer's material is already
+                // our cached instance (e.g. a re-skin), we just update
+                // the texture in place.
+                Material sharedMat = renderer.sharedMaterial;
+                if (sharedMat != null && sharedMat.mainTexture != tex)
+                {
+                    // First time we touch this renderer: remember the
+                    // original shared material so we can restore it on
+                    // skin unload, then create the unique instance.
+                    if (!originalSharedMaterials.ContainsKey(renderer))
+                    {
+                        originalSharedMaterials[renderer] = sharedMat;
+                        Material inst = new Material(sharedMat);
+                        inst.name = sharedMat.name + " (BetterMultiplayer Skin)";
+                        inst.mainTexture = tex;
+                        renderer.sharedMaterial = inst;
+                    }
+                    else
+                    {
+                        // Already have an instance — update texture in place.
+                        sharedMat.mainTexture = tex;
+                    }
+                }
+
+                // Also push via MaterialPropertyBlock as a belt-and-braces
+                // measure for the rare cases where the game recreates
+                // the renderer (e.g. scene transitions).
                 if (block == null) block = new MaterialPropertyBlock();
                 renderer.GetPropertyBlock(block);
                 block.SetTexture("_MainTex", tex);
