@@ -1555,10 +1555,37 @@ namespace BetterMultiplayer
                 currentShared.mainTexture = expected;
             }
 
+            // === DISABLE THE WHITE FLASH ===
+            // The game uses "Sprites/Default-ColorFlash" on most
+            // skinned-renderer materials. During a flash effect
+            // (e.g. monarch-wings dJumpFlash spawn, dash flash,
+            // damage flash) the game sets _FlashAmount to 1 and
+            // _FlashColor to white, making the entire sprite
+            // render as a solid white silhouette. Our unique
+            // material instance inherits whatever flash state
+            // was active when the material was copied, leaving
+            // the sprite stuck white until something resets it.
+            // Force both properties to default every frame so
+            // the skin texture always shows through.
+            if (currentShared != null)
+            {
+                if (currentShared.HasProperty("_FlashAmount"))
+                {
+                    currentShared.SetFloat("_FlashAmount", 0f);
+                }
+                if (currentShared.HasProperty("_FlashColor"))
+                {
+                    currentShared.SetColor("_FlashColor", Color.white);
+                }
+            }
+
             // === SECONDARY CHECK: the MaterialPropertyBlock ===
             // The game might have set a property-block override for
             // color tint (damage flash) but NOT for the texture. If
             // the property block's _MainTex is wrong, restore it.
+            // Also clear _FlashAmount / _FlashColor in the property
+            // block if the game set them (those are the WhiteFlash
+            // shader properties that make the sprite go white).
             if (block == null) block = new MaterialPropertyBlock();
             renderer.GetPropertyBlock(block);
             Texture current = block.GetTexture("_MainTex");
@@ -1567,6 +1594,21 @@ namespace BetterMultiplayer
                 block.SetTexture("_MainTex", expected);
                 renderer.SetPropertyBlock(block);
             }
+            // Clear flash override on the property block, if any.
+            // The base material already has _FlashAmount=0, so this
+            // is belt-and-braces.
+            bool blockDirty = false;
+            if (block.HasFloat("_FlashAmount"))
+            {
+                block.SetFloat("_FlashAmount", 0f);
+                blockDirty = true;
+            }
+            if (block.HasColor("_FlashColor"))
+            {
+                block.SetColor("_FlashColor", Color.white);
+                blockDirty = true;
+            }
+            if (blockDirty) renderer.SetPropertyBlock(block);
         }
 
         // Walks the whole tracked-sprites dictionary and re-applies
@@ -1818,6 +1860,29 @@ namespace BetterMultiplayer
                         inst = new Material(source);
                         inst.name = source.name + " (BetterMultiplayer Skin)";
                         inst.mainTexture = tex;
+                        // Disable the WhiteFlash / ColorFlash shader's
+                        // flash effect. The game uses
+                        // "Sprites/Default-ColorFlash" on most
+                        // skinned-renderer materials; when the game
+                        // triggers a flash (e.g. the monarch-wings
+                        // dJumpFlash spawn, or any other visual
+                        // effect) it sets _FlashAmount to 1 and
+                        // _FlashColor to white, which makes the
+                        // entire sprite render as a solid white
+                        // silhouette. Because we copy the source
+                        // material, our unique instance would
+                        // inherit whatever flash state was active at
+                        // copy time, leaving the sprite stuck white
+                        // forever. Reset both to default here so
+                        // the skin texture shows through normally.
+                        if (inst.HasProperty("_FlashAmount"))
+                        {
+                            inst.SetFloat("_FlashAmount", 0f);
+                        }
+                        if (inst.HasProperty("_FlashColor"))
+                        {
+                            inst.SetColor("_FlashColor", Color.white);
+                        }
                         uniqueMaterialInstances[renderer] = inst;
                         renderer.sharedMaterial = inst;
                     }
@@ -1834,6 +1899,16 @@ namespace BetterMultiplayer
                     if (inst.mainTexture != tex)
                     {
                         inst.mainTexture = tex;
+                    }
+                    // Re-disable flash in case the game or our
+                    // per-frame guard re-instated it.
+                    if (inst.HasProperty("_FlashAmount"))
+                    {
+                        inst.SetFloat("_FlashAmount", 0f);
+                    }
+                    if (inst.HasProperty("_FlashColor"))
+                    {
+                        inst.SetColor("_FlashColor", Color.white);
                     }
                 }
 
