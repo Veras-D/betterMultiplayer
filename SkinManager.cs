@@ -1398,11 +1398,31 @@ namespace BetterMultiplayer
 
         // Cache of the ORIGINAL shared material the renderer had before
         // we created a unique instance for it. We keep this so we can
-        // restore the renderer's material on skin unload, and so we
-        // never accidentally leak a material instance if the same
-        // renderer gets re-skinned.
+        // re-create the unique instance if it gets destroyed.
         private static readonly System.Collections.Generic.Dictionary<MeshRenderer, Material> originalSharedMaterials
             = new System.Collections.Generic.Dictionary<MeshRenderer, Material>();
+
+        // Cache of OUR unique material instance per renderer. The
+        // instance is created on first skin and assigned to the
+        // renderer. If the game ever replaces the renderer's
+        // sharedMaterial (e.g. during a hit animation that swaps the
+        // material back to the original atlas), we re-install our
+        // cached instance instead of creating a fresh one every frame.
+        // This is critical for the spike hit animation, which resets
+        // the renderer's sharedMaterial to the original atlas0 for
+        // the entire duration of the hit.
+        private static readonly System.Collections.Generic.Dictionary<MeshRenderer, Material> uniqueMaterialInstances
+            = new System.Collections.Generic.Dictionary<MeshRenderer, Material>();
+
+        // Returns the renderer's current sharedMaterial if it's our
+        // unique instance (skin texture still on it), or null if the
+        // game has replaced it. Used by EnsureSkinStaysApplied.
+        private static bool IsOurUniqueInstance(MeshRenderer renderer, Material m)
+        {
+            if (renderer == null || m == null) return false;
+            Material cached;
+            return uniqueMaterialInstances.TryGetValue(renderer, out cached) && cached == m;
+        }
 
         // Called every frame on every tk2dSprite. For sprites the mod
         // has skinned, verifies the sprite's MeshRenderer is still
@@ -1427,33 +1447,60 @@ namespace BetterMultiplayer
             if (renderer == null) return;
 
             // === PRIMARY CHECK: the unique material instance ===
-            // ApplyTexture creates a unique material instance for this
-            // sprite on first skin and stashes it on the renderer. As
-            // long as the renderer's sharedMaterial is still our unique
-            // instance with our texture, the skin is showing. The
-            // tk2d damage flash only writes to a MaterialPropertyBlock,
-            // so it cannot touch the material's mainTexture — making
-            // this far more robust than a property-block-only approach.
-            if (renderer.sharedMaterial != null)
+            // The knight's hit animation in Hollow Knight replaces
+            // the renderer's sharedMaterial back to the original
+            // atlas0 material for the entire duration of the hit
+            // (the "white flash"). The previous version of this code
+            // only re-installed the unique instance when sharedMaterial
+            // was null, which was too narrow — the game sets it to the
+            // ORIGINAL material, not null. So we now check whether
+            // the current sharedMaterial is still OUR cached unique
+            // instance, and if not, re-install it (or re-create it if
+            // the cached one was destroyed).
+            Material currentShared = renderer.sharedMaterial;
+            Material cachedInstance;
+            bool haveCached = uniqueMaterialInstances.TryGetValue(renderer, out cachedInstance) && cachedInstance != null;
+
+            if (!haveCached)
             {
-                if (renderer.sharedMaterial.mainTexture != expected)
-                {
-                    renderer.sharedMaterial.mainTexture = expected;
-                }
-            }
-            // If the renderer has been reset to its ORIGINAL shared
-            // material (e.g. a scene transition rebuilt the sprite),
-            // re-install our unique instance and re-apply the texture.
-            else
-            {
+                // Cached instance was lost (destroyed by the game or
+                // never created). Build a new one from the cached
+                // original material.
                 Material original;
                 if (originalSharedMaterials.TryGetValue(renderer, out original) && original != null)
                 {
-                    Material inst = new Material(original);
-                    inst.name = original.name + " (BetterMultiplayer Skin)";
-                    inst.mainTexture = expected;
-                    renderer.sharedMaterial = inst;
+                    cachedInstance = new Material(original);
+                    cachedInstance.name = original.name + " (BetterMultiplayer Skin)";
+                    cachedInstance.mainTexture = expected;
+                    uniqueMaterialInstances[renderer] = cachedInstance;
+                    renderer.sharedMaterial = cachedInstance;
                 }
+                else if (currentShared != null)
+                {
+                    // No cached original — just set the texture on
+                    // whatever material is currently there. This is a
+                    // last-resort fallback for the first frame before
+                    // ApplyTexture has run.
+                    if (currentShared.mainTexture != expected)
+                    {
+                        currentShared.mainTexture = expected;
+                    }
+                }
+            }
+            else if (currentShared != cachedInstance)
+            {
+                // The game replaced our unique instance with something
+                // else (the original atlas0 during the hit flash, or
+                // some other material). Re-install our cached instance.
+                renderer.sharedMaterial = cachedInstance;
+                currentShared = cachedInstance;
+            }
+
+            // Make sure the texture on the (now-correctly-installed)
+            // shared material is the skin texture.
+            if (currentShared != null && currentShared.mainTexture != expected)
+            {
+                currentShared.mainTexture = expected;
             }
 
             // === SECONDARY CHECK: the MaterialPropertyBlock ===
@@ -1704,39 +1751,57 @@ namespace BetterMultiplayer
             var renderer = sprite.GetComponent<MeshRenderer>();
             if (renderer != null)
             {
-                // Create a UNIQUE material instance for this renderer on
-                // first skin so our texture lives on the material itself
-                // rather than in a MaterialPropertyBlock. This is critical
-                // for surviving the tk2d damage flash: the damage flash
-                // uses a MaterialPropertyBlock to tint the sprite white,
-                // and a property-block-only skin is invisible for one
-                // frame after the flash ends because the property block
-                // has been reset. With a unique material instance, the
-                // skin's _MainTex is part of the material and cannot be
-                // clobbered by a property-block tint.
-                //
-                // The instance is cached on the renderer; subsequent
-                // calls reuse it. If the renderer's material is already
-                // our cached instance (e.g. a re-skin), we just update
-                // the texture in place.
+                // Create (or reuse) a UNIQUE material instance for this
+                // renderer. The instance is cached in
+                // uniqueMaterialInstances so the per-frame guard can
+                // re-install it if the game ever replaces the
+                // renderer's sharedMaterial (e.g. the spike hit
+                // animation sets sharedMaterial back to the original
+                // atlas0 for the entire hit duration).
                 Material sharedMat = renderer.sharedMaterial;
-                if (sharedMat != null && sharedMat.mainTexture != tex)
+                Material inst;
+                if (!uniqueMaterialInstances.TryGetValue(renderer, out inst) || inst == null)
                 {
-                    // First time we touch this renderer: remember the
-                    // original shared material so we can restore it on
-                    // skin unload, then create the unique instance.
-                    if (!originalSharedMaterials.ContainsKey(renderer))
+                    // First time we touch this renderer, or our cached
+                    // instance was destroyed. Build a new one.
+                    Material source = sharedMat != null ? sharedMat : null;
+                    if (source == null)
                     {
-                        originalSharedMaterials[renderer] = sharedMat;
-                        Material inst = new Material(sharedMat);
-                        inst.name = sharedMat.name + " (BetterMultiplayer Skin)";
+                        // Renderer's current material is null — fall
+                        // back to the cached original (if any).
+                        Material original;
+                        if (originalSharedMaterials.TryGetValue(renderer, out original) && original != null)
+                        {
+                            source = original;
+                        }
+                    }
+                    if (source != null)
+                    {
+                        // Remember the original shared material the
+                        // very first time, for future rebuilds.
+                        if (sharedMat != null && !originalSharedMaterials.ContainsKey(renderer))
+                        {
+                            originalSharedMaterials[renderer] = sharedMat;
+                        }
+                        inst = new Material(source);
+                        inst.name = source.name + " (BetterMultiplayer Skin)";
                         inst.mainTexture = tex;
+                        uniqueMaterialInstances[renderer] = inst;
                         renderer.sharedMaterial = inst;
                     }
-                    else
+                }
+                else
+                {
+                    // We already have a cached instance. Make sure the
+                    // renderer is using it (the game may have swapped
+                    // it out) and the texture is current.
+                    if (sharedMat != inst)
                     {
-                        // Already have an instance — update texture in place.
-                        sharedMat.mainTexture = tex;
+                        renderer.sharedMaterial = inst;
+                    }
+                    if (inst.mainTexture != tex)
+                    {
+                        inst.mainTexture = tex;
                     }
                 }
 
