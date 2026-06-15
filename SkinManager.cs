@@ -770,6 +770,20 @@ namespace BetterMultiplayer
             }
         }
 
+        // One-time diagnostic: dumps every child of HeroController and
+        // its tk2dSprite material so we can find the right reference
+        // sprite for each spell/effect shared-material skin. Called
+        // from a menu button (or just left in ResetModState behind a
+        // flag) — the output goes to the BepInEx log.
+        public static void DumpHeroChildren()
+        {
+            if (HeroController.instance == null) return;
+            Transform hero = HeroController.instance.transform;
+            BetterMultiplayer.Instance.Log("[DumpHeroChildren] === HeroController hierarchy ===");
+            DumpHierarchy(hero.gameObject, "");
+            BetterMultiplayer.Instance.Log("[DumpHeroChildren] === END ===");
+        }
+
         private static void DumpHierarchy(GameObject go, string indent)
         {
             if (go == null) return;
@@ -1829,6 +1843,9 @@ namespace BetterMultiplayer
             {
                 BetterMultiplayer.Instance.Log("[ResetModState] Clearing cached state and rescanning all sprites");
             }
+            // Dump HeroController children for VS reference-sprite
+            // discovery. Runs once per session (deduped by static flag).
+            DumpHeroChildren();
             // 1) Wipe dictionaries + queues.
             tk2dSprite_Awake_Patch.ClearAllState();
             // 2) Wipe SpriteRenderer scan cache (the dJumpFlash + feather
