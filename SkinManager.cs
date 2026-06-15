@@ -1554,6 +1554,30 @@ namespace BetterMultiplayer
             // collection).
             var targets = new (Texture2D tex, string[] paths)[]
             {
+                // === KNIGHT (Custom Knight approach) ===
+                // Custom Knight's Knight.cs gets the material from
+                // the "Idle" animation clip's first frame:
+                //   HeroController.instance.gameObject
+                //     .GetComponent<tk2dSpriteAnimator>()
+                //     .GetClipByName("Idle").frames[0]
+                //     .spriteCollection.spriteDefinitions[0].material
+                // and just sets material.mainTexture = tex on the
+                // SHARED material (no unique instance, no per-renderer
+                // override). This is what we do here.
+                //
+                // IMPORTANT: this means the knight's hit animation
+                // (RecoilLeft/Right/Down, Land, HardLand, Stun, etc.)
+                // will also show the skin texture — at the wrong
+                // atlas positions. The recoil frame positions in the
+                // skin texture typically hold the idle frame, so the
+                // hit animation appears to show the idle frame. This
+                // is the same behavior as Custom Knight, and it's
+                // what the user asked for: "look at how Custom Knight
+                // does it." The previous recoil-revert (which swapped
+                // to the vanilla atlas during hit frames) was
+                // fighting this and making the hit animation look
+                // like the default skin.
+                (LocalSkinTexture, new string[] { null }),
                 (LocalVSTexture,        new[] { "Focus Effects/Heal Anim" }),
                 (LocalVoidSpellsTexture, new[] { "Spells/Scr Heads 2", "Spells/Scr Base 2" }),
                 (LocalWraithsTexture,    new[] { "Spells/Scr Heads",   "Spells/Scr Base" }),
@@ -1564,6 +1588,45 @@ namespace BetterMultiplayer
             {
                 var t = targets[i];
                 if (t.tex == null) continue;
+
+                // Knight: get material from the "Idle" animation clip
+                // (matches Custom Knight's Knight.cs exactly).
+                if (i == 0)
+                {
+                    var animator = HeroController.instance.GetComponent<tk2dSpriteAnimator>();
+                    if (animator != null)
+                    {
+                        var clip = animator.GetClipByName("Idle");
+                        if (clip != null && clip.frames != null && clip.frames.Length > 0
+                            && clip.frames[0].spriteCollection != null
+                            && clip.frames[0].spriteCollection.spriteDefinitions != null
+                            && clip.frames[0].spriteCollection.spriteDefinitions.Length > 0)
+                        {
+                            var mat = clip.frames[0].spriteCollection.spriteDefinitions[0].material;
+                            if (mat != null)
+                            {
+                                if (mat.mainTexture != t.tex)
+                                {
+                                    mat.mainTexture = t.tex;
+                                    if (BetterMultiplayer.Instance != null)
+                                    {
+                                        BetterMultiplayer.Instance.Log($"[ApplySharedMaterialSkins] Set Knight.Idle.material.mainTexture = {t.tex.name} (col='{clip.frames[0].spriteCollection.name}')");
+                                    }
+                                }
+                                // Also set the collection's shared material as
+                                // a belt-and-braces fallback.
+                                if (clip.frames[0].spriteCollection.material != null
+                                    && clip.frames[0].spriteCollection.material != mat
+                                    && clip.frames[0].spriteCollection.material.mainTexture != t.tex)
+                                {
+                                    clip.frames[0].spriteCollection.material.mainTexture = t.tex;
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
+
                 for (int j = 0; j < t.paths.Length; j++)
                 {
                     Transform child = hero.Find(t.paths[j]);
@@ -2015,70 +2078,18 @@ namespace BetterMultiplayer
             return uniqueMaterialInstances.TryGetValue(renderer, out cached) && cached == m;
         }
 
-        // Returns true if the sprite is currently showing a
-        // recoil / hit-taken / stun sprite. Hollow Knight's full
-        // hit sequence on heavy damage (e.g. from spikes that
-        // teleport the knight to a safe spot) is:
-        //
-        //   1. RecoilLeft / RecoilRight / RecoilDown — quick
-        //      knockback
-        //   2. Land / HardLand — landing on the ground
-        //   3. Down / Stun / Dazed / Hurt — lying on the ground
-        //   4. Wake / GetUp — getting back up
-        //
-        // The user's skin PNGs don't have these frames at the
-        // right atlas positions, so the mod-applied skin
-        // texture would show the wrong pixels (typically the
-        // idle frame). To avoid that we revert the renderer to
-        // the original atlas0 material for the duration of the
-        // hit sequence, so the vanilla hit animation plays
-        // correctly. The Wake / GetUp sprite names are
-        // intentionally NOT included — once the knight is back
-        // up and transitioning to idle, the skin should show
-        // through again.
-        private static bool IsShowingHitSprite(tk2dSprite sprite)
-        {
-            if (sprite == null) return false;
-            var def = sprite.GetCurrentSpriteDef();
-            if (def == null) return false;
-            string defName = def.name;
-            if (string.IsNullOrEmpty(defName)) return false;
-            if (defName.IndexOf("Recoil", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (defName.IndexOf("HardLand", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (defName.IndexOf("SoftLand", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (defName.Equals("Land", StringComparison.OrdinalIgnoreCase)) return true;
-            if (defName.IndexOf("Stun", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (defName.IndexOf("Dazed", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (defName.IndexOf("Hurt", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            if (defName.IndexOf("Down", StringComparison.OrdinalIgnoreCase) >= 0) return true;
-            return false;
-        }
-
-        // Reverts a knight renderer to the original atlas0 material
-        // for the duration of a hit/recoil/stun sprite. Idempotent.
-        // Called from both ApplyTexture and EnsureSkinStaysApplied so
-        // the revert happens on the same frame the spriteId changes
-        // to a hit sprite and stays reverted until the spriteId
-        // changes back to a non-hit sprite.
-        private static void RevertForHitSprite(tk2dSprite sprite)
-        {
-            if (sprite == null) return;
-            var renderer = sprite.GetComponent<MeshRenderer>();
-            if (renderer == null) return;
-            Material original;
-            if (!originalSharedMaterials.TryGetValue(renderer, out original) || original == null) return;
-            if (renderer.sharedMaterial != original)
-            {
-                renderer.sharedMaterial = original;
-            }
-            // Also clear the unique-instance entry so the next
-            // non-hit frame will rebuild it from the original.
-            Material inst;
-            if (uniqueMaterialInstances.TryGetValue(renderer, out inst) && inst != null)
-            {
-                uniqueMaterialInstances.Remove(renderer);
-            }
-        }
+        // === RECOIL/HIT REVERT REMOVED ===
+        // Custom Knight does NOT revert the knight to the vanilla
+        // atlas during hit/recoil sprites. They just set the
+        // knight's collection's shared material to the skin
+        // texture once, and accept that the hit animation will
+        // show the skin (with whatever pixels are at the recoil
+        // frame positions in the skin texture — typically the
+        // idle frame, which is the same as the default skin).
+        // The previous recoil/hit-sprite revert in this mod was
+        // fighting Custom Knight's approach and making the hit
+        // animation look like the default skin instead of the
+        // user's skin. Now removed.
 
         // Called every frame on every tk2dSprite. For sprites the mod
         // has skinned, verifies the sprite's MeshRenderer is still
@@ -2094,23 +2105,6 @@ namespace BetterMultiplayer
             // dies and the sprite is pooled / recreated). This keeps
             // the dictionary from growing unbounded over a long run.
             if (!sprite) { skinnedSprites.Remove(sprite); return; }
-
-            // === RECOIL REVERT ===
-            // If the sprite is currently showing a recoil / hit-taken
-            // sprite, revert the renderer to the original atlas0
-            // material so the vanilla hit animation plays correctly.
-            // The user's skin PNG likely doesn't have the recoil
-            // frames at the right atlas positions, so the mod-applied
-            // skin texture would show the wrong pixels (typically the
-            // idle frame, which looks like the default skin). The
-            // skinnedSprites entry is kept so when the spriteId
-            // changes back to a non-recoil sprite we re-apply the
-            // skin on the next frame.
-            if (IsShowingHitSprite(sprite))
-            {
-                RevertForHitSprite(sprite);
-                return;
-            }
 
             Texture2D expected;
             if (!skinnedSprites.TryGetValue(sprite, out expected)) return;
@@ -2441,20 +2435,14 @@ namespace BetterMultiplayer
         {
             if (sprite == null || tex == null) return;
 
-            // === RECOIL REVERT ===
-            // If the sprite is currently showing a recoil / hit-taken
-            // sprite, revert the renderer to the original atlas0
-            // material and bail. The user's skin PNG likely doesn't
-            // have the recoil frames at the right atlas positions,
-            // so the mod-applied skin texture would show the wrong
-            // pixels (typically the idle frame, which looks like the
-            // default skin). The vanilla hit animation is the
-            // correct behavior in this case.
-            if (IsShowingHitSprite(sprite))
-            {
-                RevertForHitSprite(sprite);
-                return;
-            }
+            // === RECOIL/HIT REVERT REMOVED ===
+            // Custom Knight does not revert during hit sprites. See
+            // the comment on EnsureSkinStaysApplied for details.
+            // The per-renderer unique material instance approach
+            // still installs the unique instance (with the skin
+            // texture) — the hit animation will show the skin
+            // texture at the recoil frame positions, which is
+            // what Custom Knight users see.
 
             var renderer = sprite.GetComponent<MeshRenderer>();
             if (renderer != null)
