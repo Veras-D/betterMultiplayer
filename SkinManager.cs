@@ -775,10 +775,6 @@ namespace BetterMultiplayer
             }
             if (hudCanvas == null) return;
 
-            // One-time diagnostic: dump HUD canvas structure so we can see what
-            // sprites and materials exist. Helps identify which element is glitchy.
-            DumpHUDStructure(hudCanvas);
-
             // === HUD skin: FULLY DISABLED ===
             // The entire HUD uses the default vanilla Hollow Knight
             // art at all times. NO skin files (Hud.png, OrbFull.png)
@@ -1381,77 +1377,68 @@ namespace BetterMultiplayer
         public static void Postfix(tk2dSprite __instance)
         {
             if (__instance == null || __instance.gameObject == null) return;
-            
+
             try
             {
                 string name = __instance.gameObject.name;
                 bool isRemote = name.StartsWith("Remote_");
 
+                // === ABSOLUTE HUD OPT-OUT ===
+                // The HUD is the user's #1 pain point. The user wants the
+                // mod to NEVER touch any HUD element. We bail at the very
+                // top of this Postfix for any sprite that is part of the
+                // HUD canvas, belongs to a HUD/Soulorb/Charm Blocker
+                // collection, or whose GameObject name matches anything
+                // in the HUD. This guarantees the mod cannot interfere
+                // with the game's normal HUD rendering, even for the
+                // default skin, even with no skin selected at all.
                 if (!isRemote)
                 {
-                    // NOTE: the previous "liquid"/"vessel"/"orbfull"/"soul_orb"
-                    // texture overrides were REMOVED. Those names match HUD
-                    // children (Liquid, Vessel 1-4) and were overwriting the
-                    // shared material's mainTexture with LocalLiquidTexture /
-                    // LocalOrbFullTexture, which corrupted the entire HUD atlas
-                    // (Health 1-11, Geo Sprite, etc.) because they share the
-                    // same material. The level Liquid and the soul Orb Full
-                    // are now handled separately: Orb Full via the
-                    // SpriteRenderer replacement in UpdateHUDSkin, and the
-                    // level liquid is left as default (the HUD covers all
-                    // important liquid visuals via Hud.png).
-                }
-
-                if (__instance.Collection != null)
-                {
-                    string colName = __instance.Collection.name;
-                    if (!string.IsNullOrEmpty(colName))
+                    // 1) Collection-based detection (catches every sprite
+                    //    in the HUD atlas regardless of GameObject name).
+                    if (__instance.Collection != null)
                     {
-                        // Skip sprites whose GameObject name matches the old
-                        // HUD override patterns, even when they're in a
-                        // non-HUD collection. This prevents any leftover
-                        // override from firing on accidentally-matching
-                        // names.
-                        if (name.IndexOf("liquid", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            name.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            name.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            name.IndexOf("vessel", StringComparison.OrdinalIgnoreCase) >= 0)
+                        string colName = __instance.Collection.name;
+                        if (!string.IsNullOrEmpty(colName) &&
+                            (colName.IndexOf("HUD", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             colName.IndexOf("Soulorb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                             colName.IndexOf("Charm Blocker", StringComparison.OrdinalIgnoreCase) >= 0))
                         {
                             return;
                         }
-
-                        // Re-apply the HUD texture for any HUD sprite whose
-                        // collection name indicates it's part of the HUD
-                        // atlas. The game calls SetSprite() on these sprites
-                        // during state changes (animations, taking damage,
-                        // recovering life) and that call can reset or
-                        // re-instance the material's mainTexture. This
-                        // Postfix fires on every SetSprite, so re-applying
-                        // here keeps the skin stable across all state
-                        // changes.
-                        if (SkinManager.LocalHUDTexture != null)
+                    }
+                    // 2) Hierarchy-based detection (catches HUD children
+                    //    that for some reason aren't in an HUD collection,
+                    //    e.g. a UGUI Canvas child with a tk2dSprite). We
+                    //    walk up the parent chain looking for "Hud Canvas".
+                    {
+                        Transform t = __instance.transform.parent;
+                        while (t != null)
                         {
-                            bool isHUDCollection =
-                                colName.IndexOf("HUD", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                colName.IndexOf("Soulorb", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                                colName.IndexOf("Charm Blocker", StringComparison.OrdinalIgnoreCase) >= 0;
-                            if (isHUDCollection)
-                            {
-                                var hudDef = __instance.GetCurrentSpriteDef();
-                                if (hudDef != null)
-                                {
-                                    if (hudDef.material != null && hudDef.material.mainTexture != SkinManager.LocalHUDTexture)
-                                    {
-                                        hudDef.material.mainTexture = SkinManager.LocalHUDTexture;
-                                    }
-                                    if (hudDef.materialInst != null && hudDef.materialInst != hudDef.material
-                                        && hudDef.materialInst.mainTexture != SkinManager.LocalHUDTexture)
-                                    {
-                                        hudDef.materialInst.mainTexture = SkinManager.LocalHUDTexture;
-                                    }
-                                }
-                            }
+                            if (t.name == "Hud Canvas") return;
+                            t = t.parent;
                         }
+                    }
+                    // 3) Name-based safety net (catches the historic
+                    //    sprite names that were once matched, so no
+                    //    future code path can resurrect them).
+                    if (name.IndexOf("HUD", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Hud", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("liquid", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("orbfull", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("soul_orb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("vessel", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Health", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Geo Sprite", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Binding", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Eyes", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Burst", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Idle", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Joni", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Hive", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        name.IndexOf("Godfinder", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        return;
                     }
                 }
 
