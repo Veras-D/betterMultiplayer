@@ -315,6 +315,13 @@ namespace BetterMultiplayer
             // vanilla atlas for a single frame every time the player takes
             // damage from a spike, enemy, etc.
             SkinManager.ReapplySkinnedSprites();
+            // Find any dJumpFlash / dJumpFeathers SpriteRenderers that
+            // were created this frame and replace their .sprite with the
+            // skin's Wings.png. The tk2dSprite Postfix can't see these
+            // (they're SpriteRenderers, not tk2dSprites), so this sweep
+            // is the only way to skin the monarch-wings flash + feathers.
+            // Throttled to once every 30 frames inside the method.
+            SkinManager.ScanAndSkinDJumpFlashes();
         }
 
         private void SendPosition()

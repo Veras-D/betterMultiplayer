@@ -1196,6 +1196,58 @@ namespace BetterMultiplayer
             tk2dSprite_Awake_Patch.ReapplyAllTracked();
         }
 
+        // The monarch-wings dJumpFlash + dJumpFeathers effects are
+        // UGUI SpriteRenderers (NOT tk2dSprites), so the
+        // tk2dSprite_Awake_Patch never sees them. Harmony can't
+        // patch SpriteRenderer.Awake because Awake is a Unity
+        // message, not a real method. So we scan the active scene
+        // from BetterMultiplayerMenu.LateUpdate (throttled to once
+        // every 30 frames) and replace the .sprite on any
+        // dJumpFlash / dJumpFeathers SpriteRenderer with one built
+        // from the skin's Wings.png. Same approach as the OrbFull
+        // replacement in UpdateHUDSkin.
+        private static int dJumpFlashScanCooldown = 0;
+        private static readonly System.Collections.Generic.HashSet<SpriteRenderer> skinnedSpriteRenderers
+            = new System.Collections.Generic.HashSet<SpriteRenderer>();
+
+        public static void ScanAndSkinDJumpFlashes()
+        {
+            if (LocalWingsTexture == null) return;
+            if (--dJumpFlashScanCooldown > 0) return;
+            dJumpFlashScanCooldown = 30;
+
+            try
+            {
+                SpriteRenderer[] allRenderers = UnityEngine.Object.FindObjectsOfType<SpriteRenderer>(true);
+                for (int i = 0; i < allRenderers.Length; i++)
+                {
+                    var sr = allRenderers[i];
+                    if (sr == null || !sr) continue;
+                    if (skinnedSpriteRenderers.Contains(sr)) continue;
+                    string n = sr.gameObject.name;
+                    bool isFlashSprite =
+                        n.StartsWith("dJumpFlash", StringComparison.OrdinalIgnoreCase) ||
+                        n.StartsWith("dJumpFeathers", StringComparison.OrdinalIgnoreCase);
+                    if (!isFlashSprite) continue;
+                    if (sr.sprite == null) continue;
+                    Sprite newSprite = Sprite.Create(
+                        LocalWingsTexture,
+                        new Rect(0f, 0f, LocalWingsTexture.width, LocalWingsTexture.height),
+                        sr.sprite.pivot / sr.sprite.rect.size,
+                        sr.sprite.pixelsPerUnit);
+                    sr.sprite = newSprite;
+                    skinnedSpriteRenderers.Add(sr);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (BetterMultiplayer.Instance != null)
+                {
+                    BetterMultiplayer.Instance.LogError("Error in ScanAndSkinDJumpFlashes: " + ex);
+                }
+            }
+        }
+
         public static void ApplyCharmSkins(CharmIconList list)
         {
             if (list == null) return;
@@ -1918,56 +1970,6 @@ namespace BetterMultiplayer
             catch (Exception ex)
             {
                 BetterMultiplayer.Instance.LogError("Error in GeoControl Start Patch: " + ex);
-            }
-        }
-    }
-
-    // The monarch-wings dJumpFlash effect is a UGUI SpriteRenderer
-    // (not a tk2dSprite), so the tk2dSprite_Awake_Patch never sees
-    // it. The flash sprites were therefore left on the default
-    // vanilla atlas, making the monarch wings look half-skinned
-    // (wings were the player's skin, flash was vanilla).
-    //
-    // This patch hooks SpriteRenderer.Awake and replaces the
-    // sprite on any SpriteRenderer whose GameObject name starts
-    // with "dJumpFlash" with a new sprite built from the skin's
-    // Wings.png texture. Same approach as the OrbFull replacement
-    // in UpdateHUDSkin (which is also a SpriteRenderer).
-    [HarmonyPatch(typeof(SpriteRenderer), "Awake")]
-    public static class SpriteRenderer_DJumpFlash_Patch
-    {
-        public static void Postfix(SpriteRenderer __instance)
-        {
-            try
-            {
-                if (__instance == null || __instance.gameObject == null) return;
-                string name = __instance.gameObject.name;
-
-                if (SkinManager.LocalWingsTexture == null) return;
-
-                bool isFlashSprite =
-                    name.StartsWith("dJumpFlash", StringComparison.OrdinalIgnoreCase) ||
-                    name.StartsWith("dJumpFeathers", StringComparison.OrdinalIgnoreCase) ||
-                    (name.IndexOf("Flash", StringComparison.OrdinalIgnoreCase) >= 0 &&
-                     __instance.transform.parent != null &&
-                     __instance.transform.parent.name.IndexOf("dJump", StringComparison.OrdinalIgnoreCase) >= 0);
-
-                if (!isFlashSprite) return;
-                if (__instance.sprite == null) return;
-
-                Sprite newSprite = Sprite.Create(
-                    SkinManager.LocalWingsTexture,
-                    new Rect(0f, 0f, SkinManager.LocalWingsTexture.width, SkinManager.LocalWingsTexture.height),
-                    __instance.sprite.pivot / __instance.sprite.rect.size,
-                    __instance.sprite.pixelsPerUnit);
-                __instance.sprite = newSprite;
-            }
-            catch (Exception ex)
-            {
-                if (BetterMultiplayer.Instance != null)
-                {
-                    BetterMultiplayer.Instance.LogError("Error in SpriteRenderer_DJumpFlash_Patch: " + ex);
-                }
             }
         }
     }
