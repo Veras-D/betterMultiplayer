@@ -779,13 +779,13 @@ namespace BetterMultiplayer
             // sprites and materials exist. Helps identify which element is glitchy.
             DumpHUDStructure(hudCanvas);
 
-            // === HUD texture: region-based replacement using SheetItem approach ===
-            // The user's HUD.png is a 2048x2048 Custom Knight sheet where sprites are
-            // at SPECIFIC hardcoded coordinates. The original tk2dSpriteDefinitions
-            // have UV coordinates based on the original atlas positions, so we
-            // extract each sprite's UV region from the user's HUD.png and assign a
-            // new sprite (built from that extracted region) to the matching
-            // GameObject. This works for any HUD layout.
+            // One-time diagnostic: log every HUD GameObject's active/enabled
+            // state and the actual rendered sprite name. This is the key
+            // diagnostic the user needs to see — if the Health GameObjects
+            // are reporting enabled=false, the game is hiding them, and
+            // no amount of mod-level texture work will make them visible.
+            DumpHUDVisibility(hudCanvas);
+
             // === HUD texture: replace the entire HUD atlas ===
             // The standard Custom Knight approach: get the material from the
             // "Health 1" sprite's current sprite definition and set its
@@ -865,12 +865,64 @@ namespace BetterMultiplayer
                     UnityEngine.Object.Destroy(pulseSprite.gameObject);
                 }
             }
+
+            // === Force-enable HUD MeshRenderers ===
+            // The visibility dump revealed EVERY HUD sprite's MeshRenderer
+            // reports rend=False. This is a Unity 6 quirk where
+            // MeshRenderer.enabled reads false even when the renderer is
+            // actually active. But the Health 2-11 GameObjects were
+            // showing the 'idle_v020000' sprite (same as Idle) instead
+            // of the proper 'health' sprite — meaning GetCurrentSpriteDef
+            // returned the wrong definition on Unity 6. We force-enable
+            // all HUD renderers and force-re-set the sprite on every
+            // GameObject to a valid sprite ID in its collection, which
+            // refreshes the mesh+material binding.
+            int forcedRend = 0;
+            int forcedSprite = 0;
+            foreach (var sprite in hudCanvas.GetComponentsInChildren<tk2dSprite>(true))
+            {
+                if (sprite == null) continue;
+                var rend = sprite.GetComponent<MeshRenderer>();
+                if (rend != null)
+                {
+                    if (!rend.enabled) { rend.enabled = true; forcedRend++; }
+                }
+                // Force a sprite reset using the FIRST valid sprite id
+                // from the collection. This refreshes the mesh+material
+                // binding on Unity 6 where GetCurrentSpriteDef may be
+                // returning a stale def.
+                if (sprite.Collection != null && sprite.Collection.spriteDefinitions != null
+                    && sprite.Collection.spriteDefinitions.Length > 0)
+                {
+                    int firstId = sprite.spriteId;
+                    if (firstId < 0 || firstId >= sprite.Collection.spriteDefinitions.Length)
+                    {
+                        // Find first valid definition with valid UVs
+                        for (int i = 0; i < sprite.Collection.spriteDefinitions.Length; i++)
+                        {
+                            var sd = sprite.Collection.spriteDefinitions[i];
+                            if (sd != null && sd.uvs != null && sd.uvs.Length >= 4
+                                && !string.IsNullOrEmpty(sd.name)
+                                && sd.name != "default")
+                            {
+                                sprite.SetSprite(sprite.Collection, i);
+                                firstId = i;
+                                forcedSprite++;
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (forcedRend > 0 || forcedSprite > 0)
+            {
+                BetterMultiplayer.Instance.Log($"[UpdateHUDSkin] Forced {forcedRend} MeshRenderers enabled, {forcedSprite} sprites reset to first valid definition");
+            }
         }
 
         private static bool hudDumped = false;
         private static void DumpHUDStructure(GameObject hudCanvas)
         {
-            if (hudDumped) return;
             try
             {
                 BetterMultiplayer.Instance.Log("=== HUD CANVAS DUMP ===");
@@ -907,7 +959,355 @@ namespace BetterMultiplayer
                 BetterMultiplayer.Instance.LogError("Error dumping HUD: " + ex);
             }
         }
- 
+
+        // Logs every HUD GameObject's activeSelf, enabled, and the sprite's
+        // current spriteId, spriteName, color, and bounds. This is the
+        // diagnostic the user needs to see exactly what the game is
+        // showing right now — if the Health N GameObjects are reporting
+        // enabled=false or activeSelf=false, the game is hiding them
+        // and no amount of mod-level texture work will fix it.
+        private static bool hudVisibilityDumped = false;
+        private static void DumpHUDVisibility(GameObject hudCanvas)
+        {
+            if (hudVisibilityDumped) return;
+            try
+            {
+                BetterMultiplayer.Instance.Log("=== HUD VISIBILITY DUMP ===");
+                int idx = 0;
+                foreach (var s in hudCanvas.GetComponentsInChildren<tk2dSprite>(true))
+                {
+                    if (s == null) continue;
+                    var def = s.GetCurrentSpriteDef();
+                    var rend = s.GetComponent<MeshRenderer>();
+                    bool active = s.gameObject.activeSelf;
+                    bool enabled = s.gameObject.activeInHierarchy;
+                    bool rendEnabled = rend != null && rend.enabled;
+                    string spriteName = def != null && !string.IsNullOrEmpty(def.name) ? def.name : "?";
+                    string pos = s.transform.localPosition.ToString("F1");
+                    string scale = s.transform.localScale.ToString("F2");
+                    BetterMultiplayer.Instance.Log(
+                        $"  [Vis] #{idx++} '{s.gameObject.name}' "
+                        + $"active={active} enabled={enabled} rend={rendEnabled} "
+                        + $"sprite='{spriteName}' pos={pos} scale={scale}");
+                }
+                hudVisibilityDumped = true;
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in DumpHUDVisibility: " + ex);
+            }
+        }
+
+        // Extracts every HUD sprite from the game's vanilla atlas at its
+        // current UV coordinates and saves each one as a separate PNG file
+        // named after the sprite (with the collection name as a prefix to
+        // disambiguate "Health 1" in 'HUD Cln' vs, say, "Health 1" in
+        // some other collection). The dump goes to
+        // BepInEx/plugins/betterMultiplayer/_dump/ as both per-sprite PNGs
+        // (one file per sprite) and a single JSON sidecar with the exact
+        // pixel rectangles so a downstream template-matching script has
+        // everything it needs.
+        public static void DumpHUDSprites()
+        {
+            try
+            {
+                GameObject hudCanvas = null;
+                try
+                {
+                    if (GameCameras.instance != null)
+                    {
+                        hudCanvas = GameCameras.instance.hudCanvas;
+                    }
+                }
+                catch { }
+                if (hudCanvas == null)
+                {
+                    hudCanvas = GameObject.Find("Hud Canvas");
+                }
+                if (hudCanvas == null)
+                {
+                    BetterMultiplayer.Instance.LogError("[DumpHUDSprites] Hud Canvas not found");
+                    return;
+                }
+
+                string dllPath = System.Reflection.Assembly.GetExecutingAssembly().Location;
+                string dllDir = Path.GetDirectoryName(dllPath);
+                string dumpDir = Path.Combine(dllDir, "_dump");
+                if (!Directory.Exists(dumpDir))
+                {
+                    Directory.CreateDirectory(dumpDir);
+                }
+
+                int dumpedCount = 0;
+                int skippedCount = 0;
+                int skippedNoDef = 0;
+                int skippedNoTex = 0;
+                int skippedSmall = 0;
+                HashSet<Texture2D> dumpedAtlases = new HashSet<Texture2D>();
+
+                // Build a JSON sidecar describing each sprite's UV rect
+                // in the source atlas. The downstream script uses these
+                // pixel rectangles as the source-of-truth search areas.
+                var json = new Dictionary<string, object>();
+                json["atlasWidth"] = 0;
+                json["atlasHeight"] = 0;
+                var jsonSprites = new List<object>();
+                json["sprites"] = jsonSprites;
+
+                // First pass: log one example sprite so we can see the
+                // def / material / texture state.
+                foreach (var s0 in hudCanvas.GetComponentsInChildren<tk2dSprite>(true))
+                {
+                    if (s0 == null) continue;
+                    var def0 = s0.GetCurrentSpriteDef();
+                    BetterMultiplayer.Instance.Log(
+                        $"[DumpHUDSprites] Sample: '{s0.gameObject.name}' "
+                        + $"def={(def0 != null ? "ok" : "null")} "
+                        + $"col={(s0.Collection != null ? s0.Collection.name : "null")} "
+                        + $"mat={(def0 != null && def0.material != null ? def0.material.name : "null")} "
+                        + $"matInst={(def0 != null && def0.materialInst != null ? def0.materialInst.name : "null")} "
+                        + $"mainTex={(def0 != null && def0.material != null && def0.material.mainTexture != null ? def0.material.mainTexture.name + "(" + def0.material.mainTexture.GetType().Name + ")" : "null")}");
+                    break;
+                }
+
+                foreach (var s in hudCanvas.GetComponentsInChildren<tk2dSprite>(true))
+                {
+                    if (s == null) continue;
+                    var def = s.GetCurrentSpriteDef();
+                    if (def == null) { skippedCount++; skippedNoDef++; continue; }
+
+                    // Try multiple sources for the atlas texture. The
+                    // def.material.mainTexture can be null even when the
+                    // sprite is rendering fine (e.g. when the material is
+                    // a per-sprite instance, or the texture is on a
+                    // shared "atlas" material the sprite references
+                    // indirectly). Fall back to the renderer's material
+                    // and the collection's material.
+                    Texture2D atlas = null;
+                    if (def.material != null) atlas = def.material.mainTexture as Texture2D;
+                    if (atlas == null && def.materialInst != null)
+                    {
+                        atlas = def.materialInst.mainTexture as Texture2D;
+                    }
+                    if (atlas == null && def.materialInst != null)
+                    {
+                        // materialInst is a copy of material; read from it
+                        // via the underlying property name
+                        atlas = def.materialInst.GetTexture("_MainTex") as Texture2D;
+                    }
+                    if (atlas == null && s.Collection != null)
+                    {
+                        if (s.Collection.material != null)
+                            atlas = s.Collection.material.mainTexture as Texture2D;
+                    }
+                    if (atlas == null)
+                    {
+                        // Last resort: ask the renderer's shared material
+                        var rend = s.GetComponent<MeshRenderer>();
+                        if (rend != null && rend.sharedMaterial != null)
+                        {
+                            atlas = rend.sharedMaterial.mainTexture as Texture2D;
+                        }
+                    }
+                    if (atlas == null) { skippedCount++; skippedNoTex++; continue; }
+
+                    // Copy to RGBA32 once per atlas (handles DXT5/BC3).
+                    Texture2D readable = dumpedAtlases.Contains(atlas)
+                        ? null
+                        : MakeReadableCopy(atlas);
+                    if (readable != null)
+                    {
+                        dumpedAtlases.Add(atlas);
+                        jsonSprites.Add(new Dictionary<string, object>
+                        {
+                            { "_atlas", "atlas_" + readable.width + "x" + readable.height + ".png" },
+                            { "width", readable.width },
+                            { "height", readable.height }
+                        });
+                        json["atlasWidth"] = readable.width;
+                        json["atlasHeight"] = readable.height;
+                        // Save the readable atlas as a reference (once)
+                        File.WriteAllBytes(Path.Combine(dumpDir, "atlas_" + readable.width + "x" + readable.height + ".png"), readable.EncodeToPNG());
+                    }
+
+                    if (def.uvs == null || def.uvs.Length < 4) { skippedCount++; continue; }
+
+                    // Convert UV (0..1) to pixel coordinates. Y is flipped
+                    // because Unity textures have Y=0 at the bottom but
+                    // PNG/UI conventions have Y=0 at the top — and the
+                    // Custom Knight atlas was authored top-down.
+                    Vector2 uvMin = def.uvs[0];
+                    Vector2 uvMax = def.uvs[0];
+                    for (int i = 1; i < def.uvs.Length; i++)
+                    {
+                        uvMin = Vector2.Min(uvMin, def.uvs[i]);
+                        uvMax = Vector2.Max(uvMax, def.uvs[i]);
+                    }
+                    int texW = atlas.width;
+                    int texH = atlas.height;
+                    // Flip Y so the dumped PNG matches what an image
+                    // editor shows (top-down, matching the Custom Knight
+                    // authored layout).
+                    int px = Mathf.Clamp(Mathf.RoundToInt(uvMin.x * texW), 0, texW - 1);
+                    int pyTop = Mathf.Clamp(Mathf.RoundToInt((1f - uvMax.y) * texH), 0, texH - 1);
+                    int pw = Mathf.Clamp(Mathf.RoundToInt((uvMax.x - uvMin.x) * texW), 1, texW - px);
+                    int ph = Mathf.Clamp(Mathf.RoundToInt((uvMax.y - uvMin.y) * texH), 1, texH - pyTop);
+                    if (pw < 2 || ph < 2) { skippedCount++; skippedSmall++; continue; }
+
+                    // Get the readable copy (or a fresh one) to read pixels from
+                    Texture2D src = readable != null ? readable : MakeReadableCopy(atlas);
+                    if (src == null) { skippedCount++; continue; }
+                    if (!dumpedAtlases.Contains(src))
+                    {
+                        dumpedAtlases.Add(src);
+                        File.WriteAllBytes(Path.Combine(dumpDir, "atlas_" + src.width + "x" + src.height + ".png"), src.EncodeToPNG());
+                    }
+
+                    Color[] pixels = src.GetPixels(px, pyTop, pw, ph);
+                    Texture2D spriteTex = new Texture2D(pw, ph, TextureFormat.RGBA32, false);
+                    spriteTex.SetPixels(pixels);
+                    spriteTex.Apply();
+
+                    // Filename: collection_spriteName.png (sanitized)
+                    string colName = s.Collection != null ? s.Collection.name : "unknown";
+                    string safeCol = SanitizeFileName(colName);
+                    string safeName = SanitizeFileName(s.gameObject.name);
+                    string filename = safeCol + "__" + safeName + ".png";
+                    string filePath = Path.Combine(dumpDir, filename);
+                    File.WriteAllBytes(filePath, spriteTex.EncodeToPNG());
+
+                    jsonSprites.Add(new Dictionary<string, object>
+                    {
+                        { "file", filename },
+                        { "collection", colName },
+                        { "gameObject", s.gameObject.name },
+                        { "uvMin", new Dictionary<string, float> { { "x", uvMin.x }, { "y", uvMin.y } } },
+                        { "uvMax", new Dictionary<string, float> { { "x", uvMax.x }, { "y", uvMax.y } } },
+                        { "atlasPx", new Dictionary<string, int> { { "x", px }, { "y", pyTop }, { "w", pw }, { "h", ph } } },
+                        { "atlasSize", new Dictionary<string, int> { { "w", texW }, { "h", texH } } }
+                    });
+
+                    UnityEngine.Object.Destroy(spriteTex);
+                    dumpedCount++;
+                }
+
+                // Write the JSON sidecar
+                string jsonPath = Path.Combine(dumpDir, "hud_sprites.json");
+                File.WriteAllText(jsonPath, MiniJson.Serialize(json));
+                BetterMultiplayer.Instance.Log(
+                    $"[DumpHUDSprites] Dumped {dumpedCount} sprites to {dumpDir} "
+                    + $"(skipped {skippedCount}: noDef={skippedNoDef}, noTex={skippedNoTex}, small={skippedSmall}). "
+                    + $"JSON sidecar: {jsonPath}");
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in DumpHUDSprites: " + ex);
+            }
+        }
+
+        private static Texture2D MakeReadableCopy(Texture2D source)
+        {
+            if (source == null) return null;
+            try
+            {
+                var copy = new Texture2D(source.width, source.height, TextureFormat.RGBA32, false);
+                var pixels = source.GetPixels();
+                copy.SetPixels(pixels);
+                copy.Apply();
+                return copy;
+            }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("MakeReadableCopy failed: " + ex.Message);
+                return null;
+            }
+        }
+
+        private static string SanitizeFileName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return "unnamed";
+            char[] invalid = Path.GetInvalidFileNameChars();
+            var sb = new System.Text.StringBuilder(name.Length);
+            foreach (char c in name)
+            {
+                sb.Append(Array.IndexOf(invalid, c) >= 0 ? '_' : c);
+            }
+            return sb.ToString();
+        }
+
+        // Tiny JSON writer — avoids a Newtonsoft.Json dependency for the dump
+        // sidecar. Only handles the shapes we actually emit.
+        private static class MiniJson
+        {
+            public static string Serialize(object obj)
+            {
+                var sb = new System.Text.StringBuilder();
+                Write(sb, obj, 0);
+                return sb.ToString();
+            }
+            private static void Write(System.Text.StringBuilder sb, object obj, int indent)
+            {
+                if (obj == null) { sb.Append("null"); return; }
+                if (obj is bool) { sb.Append(((bool)obj) ? "true" : "false"); return; }
+                if (obj is string) { WriteString(sb, (string)obj); return; }
+                if (obj is int || obj is long || obj is float || obj is double)
+                {
+                    sb.Append(System.Convert.ToString(obj, System.Globalization.CultureInfo.InvariantCulture));
+                    return;
+                }
+                if (obj is System.Collections.IDictionary)
+                {
+                    var dict = (System.Collections.IDictionary)obj;
+                    if (dict.Count == 0) { sb.Append("{}"); return; }
+                    sb.Append("{\n");
+                    bool first = true;
+                    foreach (System.Collections.DictionaryEntry kv in dict)
+                    {
+                        if (!first) sb.Append(",\n"); first = false;
+                        Indent(sb, indent + 1);
+                        WriteString(sb, kv.Key.ToString());
+                        sb.Append(": ");
+                        Write(sb, kv.Value, indent + 1);
+                    }
+                    sb.Append("\n"); Indent(sb, indent); sb.Append("}");
+                    return;
+                }
+                if (obj is System.Collections.IList)
+                {
+                    var list = (System.Collections.IList)obj;
+                    if (list.Count == 0) { sb.Append("[]"); return; }
+                    sb.Append("[\n");
+                    bool first = true;
+                    foreach (var item in list)
+                    {
+                        if (!first) sb.Append(",\n"); first = false;
+                        Indent(sb, indent + 1);
+                        Write(sb, item, indent + 1);
+                    }
+                    sb.Append("\n"); Indent(sb, indent); sb.Append("]");
+                    return;
+                }
+                sb.Append("null");
+            }
+            private static void WriteString(System.Text.StringBuilder sb, string s)
+            {
+                sb.Append('"');
+                foreach (char c in s)
+                {
+                    if (c == '"' || c == '\\') sb.Append('\\').Append(c);
+                    else if (c == '\n') sb.Append("\\n");
+                    else if (c == '\r') sb.Append("\\r");
+                    else if (c == '\t') sb.Append("\\t");
+                    else sb.Append(c);
+                }
+                sb.Append('"');
+            }
+            private static void Indent(System.Text.StringBuilder sb, int n)
+            {
+                for (int i = 0; i < n; i++) sb.Append("  ");
+            }
+        }
+
         private static Sprite[] originalSpriteList;
         private static Sprite originalUnbreakableHeart;
         private static Sprite originalUnbreakableGreed;
