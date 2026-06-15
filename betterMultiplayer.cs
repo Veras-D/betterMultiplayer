@@ -309,6 +309,12 @@ namespace BetterMultiplayer
         {
             // Keep skins applied AFTER animations have completed for this frame
             SkinManager.UpdateSkins();
+            // Re-apply skin textures to sprites whose MaterialPropertyBlock
+            // was clobbered by the game's damage flash / hit tint this
+            // frame. Without this, the knight visibly flashes back to the
+            // vanilla atlas for a single frame every time the player takes
+            // damage from a spike, enemy, etc.
+            SkinManager.ReapplySkinnedSprites();
         }
 
         private void SendPosition()

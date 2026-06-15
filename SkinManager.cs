@@ -1183,6 +1183,19 @@ namespace BetterMultiplayer
         private static Sprite originalNymmCharm;
         private static bool backupsSaved = false;
 
+        // Called every frame from BetterMultiplayerMenu.LateUpdate().
+        // Iterates the skinned-sprites dictionary and re-applies the
+        // skin texture to any sprite whose MaterialPropertyBlock has
+        // been clobbered by the game's damage-flash / hit-tint. This
+        // ensures the player never sees the vanilla atlas for more
+        // than a single frame after taking damage.
+        public static void ReapplySkinnedSprites()
+        {
+            // Walk the patch's private dictionary via the public
+            // helper on tk2dSprite_Awake_Patch.
+            tk2dSprite_Awake_Patch.ReapplyAllTracked();
+        }
+
         public static void ApplyCharmSkins(CharmIconList list)
         {
             if (list == null) return;
@@ -1373,7 +1386,69 @@ namespace BetterMultiplayer
     public static class tk2dSprite_Awake_Patch
     {
         private static MaterialPropertyBlock block;
- 
+
+        // Tracks every (sprite, expected _MainTex) pair we've ever skinned.
+        // The per-frame Update Postfix consults this set to re-apply the
+        // skin whenever the game's MaterialPropertyBlock flash / damage
+        // tint clobbers our override. Sprites not in this set are
+        // untouched by the per-frame check, so the overhead is just a
+        // dictionary lookup on a few entries.
+        private static readonly System.Collections.Generic.Dictionary<tk2dSprite, Texture2D> skinnedSprites
+            = new System.Collections.Generic.Dictionary<tk2dSprite, Texture2D>();
+
+        // Called every frame on every tk2dSprite. For sprites the mod
+        // has skinned, verifies the sprite's MeshRenderer is still
+        // rendering with our _MainTex. If anything in the game has
+        // overridden the property block (damage flash, hit tint, scene
+        // reset, etc.) we re-apply immediately so the player never sees
+        // the vanilla atlas for more than a single frame.
+        public static void EnsureSkinStaysApplied(tk2dSprite sprite)
+        {
+            if (sprite == null) return;
+
+            // Lazy prune dead sprite references (e.g. when the knight
+            // dies and the sprite is pooled / recreated). This keeps
+            // the dictionary from growing unbounded over a long run.
+            if (!sprite) { skinnedSprites.Remove(sprite); return; }
+
+            Texture2D expected;
+            if (!skinnedSprites.TryGetValue(sprite, out expected)) return;
+            if (expected == null) { skinnedSprites.Remove(sprite); return; }
+
+            var renderer = sprite.GetComponent<MeshRenderer>();
+            if (renderer == null) return;
+
+            if (block == null) block = new MaterialPropertyBlock();
+            renderer.GetPropertyBlock(block);
+            Texture current = block.GetTexture("_MainTex");
+            if (current != expected)
+            {
+                // Game overwrote our texture (damage flash, etc.) — restore.
+                block.SetTexture("_MainTex", expected);
+                renderer.SetPropertyBlock(block);
+            }
+        }
+
+        // Walks the whole tracked-sprites dictionary and re-applies
+        // skin textures whose MaterialPropertyBlock has been clobbered.
+        // Drives the once-per-frame restore from
+        // BetterMultiplayerMenu.LateUpdate. We also use this as a
+        // chance to lazy-prune any sprite references that have been
+        // destroyed.
+        public static void ReapplyAllTracked()
+        {
+            if (skinnedSprites.Count == 0) return;
+            // Copy keys to a list so we can safely Remove dead entries
+            // while iterating.
+            var keys = new System.Collections.Generic.List<tk2dSprite>(skinnedSprites.Keys);
+            for (int i = 0; i < keys.Count; i++)
+            {
+                var sprite = keys[i];
+                if (sprite == null || !sprite) { skinnedSprites.Remove(sprite); continue; }
+                EnsureSkinStaysApplied(sprite);
+            }
+        }
+
         public static void Postfix(tk2dSprite __instance)
         {
             if (__instance == null || __instance.gameObject == null) return;
@@ -1562,6 +1637,7 @@ namespace BetterMultiplayer
  
         public static void ApplyTexture(tk2dSprite sprite, Texture2D tex)
         {
+            if (sprite == null || tex == null) return;
             var renderer = sprite.GetComponent<MeshRenderer>();
             if (renderer != null)
             {
@@ -1570,6 +1646,10 @@ namespace BetterMultiplayer
                 block.SetTexture("_MainTex", tex);
                 renderer.SetPropertyBlock(block);
             }
+            // Register so the per-frame Update Postfix can detect
+            // damage-flash / hit-tint overrides and restore our
+            // texture on the next frame.
+            skinnedSprites[sprite] = tex;
         }
 
         public static void ApplyHUDTexture(tk2dSprite sprite, Texture2D tex)
@@ -1644,6 +1724,13 @@ namespace BetterMultiplayer
             }
         }
     }
+
+    // tk2dBaseSprite has no public Update method we can Harmony-patch
+    // (Update is a Unity message, not a real method). The per-frame
+    // re-apply is instead driven by BetterMultiplayerMenu.LateUpdate,
+    // which calls SkinManager.ReapplySkinnedSprites() every frame to
+    // restore textures clobbered by the game's damage-flash
+    // MaterialPropertyBlock.
 
     [HarmonyPatch(typeof(CharmIconList), "Start")]
     public static class CharmIconList_Start_Patch
