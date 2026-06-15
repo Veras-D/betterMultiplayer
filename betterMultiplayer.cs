@@ -538,6 +538,7 @@ namespace BetterMultiplayer
                     HighlightSkin(SkinManager.SelectedSkin);
                 }
             }
+
         }
     }
 
