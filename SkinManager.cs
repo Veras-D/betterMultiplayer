@@ -779,45 +779,13 @@ namespace BetterMultiplayer
             // sprites and materials exist. Helps identify which element is glitchy.
             DumpHUDStructure(hudCanvas);
 
-            // === HUD texture: DISABLED ===
-            // The skin's Hud.png is no longer applied to the HUD atlas.
-            // The default Hollow Knight HUD is used regardless of which
-            // skin is active. This is the safe default — applying
-            // custom Hud.png files to the Unity 6 runtime has proven
-            // fragile (mismapped sprites, missing Health masks,
-            // regressions with Joni Health / Binding state
-            // transitions, etc.). The rest of the skin (Knight,
-            // OrbFull, Cloak, VS, Wings, effects) still works.
-            BetterMultiplayer.Instance.Log("[UpdateHUDSkin] HUD skin disabled — using default vanilla HUD atlas");
-
-            // === OrbFull texture: replace the "Orb Full" SpriteRenderer's sprite ===
-            // The soul vessel uses a UGUI SpriteRenderer, not tk2dSprite.
-            if (LocalOrbFullTexture != null)
-            {
-                SpriteRenderer orbFull = null;
-                SpriteRenderer pulseSprite = null;
-                foreach (var sr in hudCanvas.GetComponentsInChildren<SpriteRenderer>(true))
-                {
-                    if (sr == null) continue;
-                    string n = sr.gameObject.name;
-                    if (n == "Orb Full") orbFull = sr;
-                    else if (n == "Pulse Sprite") pulseSprite = sr;
-                }
-                if (orbFull != null && orbFull.sprite != null)
-                {
-                    Sprite newSprite = Sprite.Create(LocalOrbFullTexture,
-                        new Rect(0f, 0f, LocalOrbFullTexture.width, LocalOrbFullTexture.height),
-                        orbFull.sprite.pivot / orbFull.sprite.rect.size,
-                        orbFull.sprite.pixelsPerUnit);
-                    orbFull.sprite = newSprite;
-                    BetterMultiplayer.Instance.Log("[UpdateHUDSkin] Applied OrbFull.png to 'Orb Full' SpriteRenderer");
-                }
-                // Destroy the pulse effect since it would show the old orb
-                if (pulseSprite != null && pulseSprite.gameObject != null)
-                {
-                    UnityEngine.Object.Destroy(pulseSprite.gameObject);
-                }
-            }
+            // === HUD skin: FULLY DISABLED ===
+            // The entire HUD uses the default vanilla Hollow Knight
+            // art at all times. NO skin files (Hud.png, OrbFull.png)
+            // are applied to any HUD element. This gives the user the
+            // unmodified base-game HUD regardless of which skin they
+            // pick for the character itself.
+            BetterMultiplayer.Instance.Log("[UpdateHUDSkin] HUD skin fully disabled — using 100% default vanilla HUD");
         }
 
         private static bool hudDumped = false;
