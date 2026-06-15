@@ -132,6 +132,18 @@ namespace BetterMultiplayer
                 LocalHitPtTexture = LoadExtraTexture(skinName, "HitPt.png") ?? LoadExtraTexture(skinName, "hitPt.png") ?? LoadExtraTexture(skinName, "hitpt.png");
                 LocalDeathPtTexture = LoadExtraTexture(skinName, "Deathpt.png") ?? LoadExtraTexture(skinName, "deathPt.png") ?? LoadExtraTexture(skinName, "deathpt.png");
  
+                // === SHARED-MATERIAL SKIN (Custom Knight approach) ===
+                // For spell sprites (Vengeful Spirit, Void Spells, Howling
+                // Wraiths, Abyss Shriek) and other effects in their own
+                // tk2d collections, all sprites share a single material.
+                // We don't need to find every pooled clone in
+                // DontDestroyOnLoad/_GameManager/GlobalPool/ — we just
+                // find a reference sprite under HeroController, get its
+                // shared material, and set mainTexture on that material
+                // once. Every sprite using the material (including
+                // pooled clones) gets skinned automatically.
+                ApplySharedMaterialSkins();
+
                 BetterMultiplayer.Instance.Log($"Successfully applied local skin: {skinName}");
                 if (CharmIconList.Instance != null)
                 {
@@ -203,6 +215,7 @@ namespace BetterMultiplayer
                 RemoteSelectedSkin = skinName;
 
                 BetterMultiplayer.Instance.Log($"Loaded skin for partner: {skinName}");
+                ApplySharedMaterialSkins();
                 ForceUpdateAllSprites();
             }
             catch (Exception ex)
@@ -1469,6 +1482,93 @@ namespace BetterMultiplayer
         }
 
         // ====================================================================
+        // SHARED-MATERIAL SKIN (Custom Knight approach for spells/effects)
+        // ====================================================================
+        //
+        // The path-based resolver (below) tries to find every individual
+        // pooled spell clone under
+        // DontDestroyOnLoad/_GameManager/GlobalPool/ and create a
+        // unique material instance for each one. That approach
+        // doesn't work reliably because:
+        //   1. The pooled clones are lazy-spawned — the path rules
+        //      fire only on tk2dSprite.Awake, which happens the
+        //      first time each clone is used.
+        //   2. Even when caught, the unique material instance must
+        //      be re-installed every frame because the game
+        //      sometimes replaces the renderer's sharedMaterial.
+        //
+        // Custom Knight's actual approach (see
+        // CustomKnight/Skin/Base/SkinableItems/Knight/VS.cs and
+        // VoidSpells.cs) is much simpler: in tk2d, every sprite in
+        // a sprite collection shares a single material. So instead
+        // of finding every pooled clone, Custom Knight walks the
+        // HeroController's children to find a single reference
+        // sprite (e.g. "Heal Anim" for VS, "Scr Heads 2" for
+        // VoidSpells), grabs ITS material via
+        // GetCurrentSpriteDef().material, and sets mainTexture on
+        // that one material. Every sprite using the material —
+        // including the pooled clones in GlobalPool/ — gets skinned
+        // at once.
+        //
+        // We use this approach for spells and effects that live in
+        // their own tk2d collection (safe to modify — they don't
+        // share material with the HUD or knight). The KNIGHT itself
+        // is still done per-renderer via the unique material
+        // instance path, because the knight's atlas0 is shared
+        // with the HUD.
+        //
+        // Reference sprite paths under HeroController (from
+        // Custom Knight source):
+        //   VS          -> Focus Effects/Heal Anim
+        //   VoidSpells  -> Spells/Scr Heads 2  OR  Spells/Scr Base 2
+        //   Wraiths     -> Spells/Scr Heads     OR  Spells/Scr Base
+        //   Shriek      -> Spells/Scr Heads 3   OR  Spells/Scr Base 3
+        //   Quake       -> Spells/Quake Effect  (no skin file, so
+        //                  Descending Dark stays on the vanilla atlas)
+        private static void ApplySharedMaterialSkins()
+        {
+            if (HeroController.instance == null) return;
+            Transform hero = HeroController.instance.transform;
+
+            // Each entry: (texture, list of child paths under HeroController
+            // whose tk2dSprite material we want to set). Multiple
+            // reference sprites per kind are needed because some
+            // spell types have two reference sprites that share the
+            // material (Custom Knight does the same — it loops
+            // through and grabs the first non-null one, and they
+            // happen to share material because they're in the same
+            // collection).
+            var targets = new (Texture2D tex, string[] paths)[]
+            {
+                (LocalVSTexture,        new[] { "Focus Effects/Heal Anim" }),
+                (LocalVoidSpellsTexture, new[] { "Spells/Scr Heads 2", "Spells/Scr Base 2" }),
+                (LocalWraithsTexture,    new[] { "Spells/Scr Heads",   "Spells/Scr Base" }),
+                (LocalShriekTexture,     new[] { "Spells/Scr Heads 3", "Spells/Scr Base 3" }),
+            };
+
+            for (int i = 0; i < targets.Length; i++)
+            {
+                var t = targets[i];
+                if (t.tex == null) continue;
+                for (int j = 0; j < t.paths.Length; j++)
+                {
+                    Transform child = hero.Find(t.paths[j]);
+                    if (child == null) continue;
+                    var sprite = child.GetComponent<tk2dSprite>();
+                    if (sprite == null) continue;
+                    var def = sprite.GetCurrentSpriteDef();
+                    if (def == null || def.material == null) continue;
+                    if (def.material.mainTexture == t.tex) continue; // already set
+                    def.material.mainTexture = t.tex;
+                    if (BetterMultiplayer.Instance != null)
+                    {
+                        BetterMultiplayer.Instance.Log($"[ApplySharedMaterialSkins] Set {t.paths[j]}.material.mainTexture = {t.tex.name}");
+                    }
+                }
+            }
+        }
+
+        // ====================================================================
         // PATH-BASED SKIN RESOLVER (Custom Knight style)
         // ====================================================================
 
@@ -1787,6 +1887,16 @@ namespace BetterMultiplayer
             // the scene load already has the skin applied (no flash of
             // vanilla atlas).
             DrainPathResolveQueue();
+            // 5b) Apply shared-material skins (Custom Knight approach
+            // for spells/effects). The path-based resolver above
+            // tries to find every pooled clone, but the shared-
+            // material approach is more reliable for the spell
+            // collection because the pooled clones only wake up the
+            // first time they're cast — a save slot that already
+            // has spell progress would never trigger those Awake
+            // hooks on its own, but their shared material is
+            // already in the scene and gets re-skinned here.
+            ApplySharedMaterialSkins();
             // 6) Reset charm backups so re-applying charms uses fresh
             // references for the new scene's CharmIconList.
             backupsSaved = false;
