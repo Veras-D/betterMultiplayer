@@ -1665,6 +1665,28 @@ namespace BetterMultiplayer
                     {
                         ApplyTexture(__instance, SkinManager.LocalShriekTexture);
                     }
+                    // === FALLBACK: any other local sprite whose parent
+                    // is HeroController and that didn't match one of
+                    // the specific checks above ===
+                    //
+                    // The hit / damage animation swaps the main knight
+                    // sprite out for a differently-named sprite (e.g.
+                    // a "Hit" or recoil sprite) and runs that for the
+                    // entire duration of the hit. The previous check
+                    // `name == "Sprite"` would not match those sprites
+                    // and so the skin was lost for the full hit
+                    // animation. This catch-all applies the knight
+                    // skin to ANY local tk2dSprite under HeroController
+                    // — the specific checks above (Cloak, Hollow Shade,
+                    // Fireball, Dash Effect, etc.) still get priority
+                    // because they're earlier in the if/else chain.
+                    else if (__instance.transform.parent != null
+                             && HeroController.instance != null
+                             && __instance.transform.parent.gameObject == HeroController.instance.gameObject
+                             && SkinManager.LocalSkinTexture != null)
+                    {
+                        ApplyTexture(__instance, SkinManager.LocalSkinTexture);
+                    }
                 }
             }
             catch (Exception ex)
