@@ -1605,21 +1605,53 @@ namespace BetterMultiplayer
                 if (sprite == null || !sprite) continue;
                 var marker = sprite.GetComponent<GlobalSwapMarker>();
                 if (marker == null || string.IsNullOrEmpty(marker.originalPath)) continue;
-                // HUD opt-out: never skin anything under Hud Canvas
+                if (sprite.gameObject == null) continue;
+                string goName = sprite.gameObject.name;
+                if (string.IsNullOrEmpty(goName)) continue;
+
+                // === GEO ANIMATION HARD OPT-OUT ===
+                // The geo pickup animation lives in a SEPARATE collection
+                // (GeoRockData) with its own atlas. Replacing its material
+                // with any of our skin textures corrupts the animation
+                // because the frame positions don't line up. Leave it
+                // entirely alone.
+                if (goName.StartsWith("geo", StringComparison.OrdinalIgnoreCase) ||
+                    goName.StartsWith("Geo", StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+                if (sprite.Collection != null &&
+                    !string.IsNullOrEmpty(sprite.Collection.name) &&
+                    sprite.Collection.name.IndexOf("Geo", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    continue;
+                }
+
+                // === HUD OPT-OUT ===
+                // The HUD is the user's #1 pain point. Never skin a
+                // sprite that's part of the HUD canvas or a HUD-named
+                // collection. Walk the parent chain looking for
+                // "Hud Canvas" (a UGUI Canvas GameObject) or a
+                // hierarchy element whose name contains "HUD".
                 if (sprite.transform != null)
                 {
                     Transform t = sprite.transform;
                     while (t != null)
                     {
-                        if (t.name == "Hud Canvas") { t = null; break; }
-                        if (t.name == "Hud Canvas" || (t.name != null && t.name.IndexOf("HUD", StringComparison.OrdinalIgnoreCase) >= 0))
+                        string tn = t.name;
+                        if (!string.IsNullOrEmpty(tn))
                         {
-                            // Found a HUD ancestor — skip
-                            break;
+                            if (tn == "Hud Canvas" ||
+                                tn.IndexOf("HUD", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                tn.IndexOf("Soulorb", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                tn.IndexOf("Charm Blocker", StringComparison.OrdinalIgnoreCase) >= 0)
+                            {
+                                break;
+                            }
                         }
                         t = t.parent;
                     }
-                    if (t != null && t.name == "Hud Canvas") continue;
+                    if (t != null) continue;
                 }
                 if (sprite.Collection != null)
                 {
@@ -1632,8 +1664,9 @@ namespace BetterMultiplayer
                         continue;
                     }
                 }
+
                 bool isRemote = marker.originalPath.StartsWith("Remote_", StringComparison.OrdinalIgnoreCase)
-                                || sprite.gameObject.name.StartsWith("Remote_", StringComparison.OrdinalIgnoreCase);
+                                || goName.StartsWith("Remote_", StringComparison.OrdinalIgnoreCase);
                 Texture2D tex = ResolveSkin(marker.originalPath, isRemote);
                 if (tex != null)
                 {
@@ -2332,6 +2365,24 @@ namespace BetterMultiplayer
             if (__instance == null || __instance.gameObject == null) return;
             try
             {
+                string goName = __instance.gameObject.name;
+                if (string.IsNullOrEmpty(goName)) return;
+
+                // === GEO ANIMATION HARD OPT-OUT ===
+                // Geo pickup animation lives in a separate collection
+                // (GeoRockData) with its own atlas. Don't attach a
+                // marker or enqueue — we'd never want to skin these.
+                if (goName.StartsWith("geo", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+                if (__instance.Collection != null &&
+                    !string.IsNullOrEmpty(__instance.Collection.name) &&
+                    __instance.Collection.name.IndexOf("Geo", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return;
+                }
+
                 UnityEngine.SceneManagement.Scene sc = __instance.gameObject.scene;
                 string sceneName = sc.IsValid() ? sc.name : "";
                 string goPath = __instance.gameObject.GetPath(true);
