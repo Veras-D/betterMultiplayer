@@ -1522,6 +1522,32 @@ namespace BetterMultiplayer
             ("HeroBox/Effects/Abyss Shriek", false, SkinKind.Shriek),
             ("HeroBox/Effects/Abyss Scream", false, SkinKind.Shriek),
             ("HeroBox/Effects/Hollow Shade", false, SkinKind.Shade),
+            // === GLOBAL POOL SPELL SPRITES ===
+            // In Hollow Knight, spell projectiles (Fireball,
+            // Fireball2, Quake, Scream, etc.) are pooled in the
+            // _GameManager/GlobalPool GameObject under
+            // DontDestroyOnLoad. The pooled clones are spawned
+            // (Instantiate'd) when the game needs them, so their
+            // paths are:
+            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball(Clone)
+            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball2 Spiral(Clone)
+            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball2 Top(Clone)
+            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball Top(Clone)
+            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball Blast
+            //   DontDestroyOnLoad/_GameManager/GlobalPool/Fireball2 Blast
+            //   DontDestroyOnLoad/_GameManager/GlobalPool/Quake ...
+            // The HeroBox/Effects rules above never match these
+            // (different parent path), so the spells stayed on the
+            // vanilla atlas — only the empty Knight.png path
+            // matched. With the rules below, every pooled spell
+            // clone and its child sprites get the right skin
+            // texture.
+            ("GlobalPool/Fireball2", false, SkinKind.VoidSpells),
+            ("GlobalPool/Fireball", false, SkinKind.VS),
+            ("GlobalPool/Quake", false, SkinKind.Skip),
+            ("GlobalPool/Quake Effect", false, SkinKind.Skip),
+            ("GlobalPool/Scream", false, SkinKind.Wraiths),
+            ("GlobalPool/Shadow", false, SkinKind.VoidSpells),
             // Wings (dJumpWingsPrefab is spawned under HeroBox/Effects/)
             ("dJump Wings Prefab", false, SkinKind.Wings),
             ("dJumpWingsPrefab", false, SkinKind.Wings),
