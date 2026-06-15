@@ -1816,6 +1816,55 @@ namespace BetterMultiplayer
             return uniqueMaterialInstances.TryGetValue(renderer, out cached) && cached == m;
         }
 
+        // Returns true if the sprite is currently showing a
+        // recoil / hit-taken sprite (RecoilLeft, RecoilRight,
+        // RecoilDown, etc.). The recoil sprites in Hollow Knight
+        // live in the knight's collection and the game just changes
+        // spriteId to swap them in. If the user's Knight.png doesn't
+        // have the recoil frames at the right atlas positions (which
+        // is true for most Custom Knight skins), the mod-applied skin
+        // texture would show the wrong pixels — typically the idle
+        // frame, which looks like the default skin. To avoid that
+        // we revert the renderer to the original atlas0 material for
+        // the duration of the recoil, so the vanilla hit animation
+        // plays correctly even when the skin doesn't have recoil
+        // frames packed at the right positions.
+        private static bool IsShowingRecoilSprite(tk2dSprite sprite)
+        {
+            if (sprite == null) return false;
+            var def = sprite.GetCurrentSpriteDef();
+            if (def == null) return false;
+            string defName = def.name;
+            if (string.IsNullOrEmpty(defName)) return false;
+            return defName.IndexOf("Recoil", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        // Reverts a knight renderer to the original atlas0 material
+        // for the duration of a recoil sprite. Idempotent. Called
+        // from both ApplyTexture and EnsureSkinStaysApplied so the
+        // revert happens on the same frame the spriteId changes to
+        // a recoil sprite and stays reverted until the spriteId
+        // changes back to a non-recoil sprite.
+        private static void RevertForRecoil(tk2dSprite sprite)
+        {
+            if (sprite == null) return;
+            var renderer = sprite.GetComponent<MeshRenderer>();
+            if (renderer == null) return;
+            Material original;
+            if (!originalSharedMaterials.TryGetValue(renderer, out original) || original == null) return;
+            if (renderer.sharedMaterial != original)
+            {
+                renderer.sharedMaterial = original;
+            }
+            // Also clear the unique-instance entry so the next
+            // non-recoil frame will rebuild it from the original.
+            Material inst;
+            if (uniqueMaterialInstances.TryGetValue(renderer, out inst) && inst != null)
+            {
+                uniqueMaterialInstances.Remove(renderer);
+            }
+        }
+
         // Called every frame on every tk2dSprite. For sprites the mod
         // has skinned, verifies the sprite's MeshRenderer is still
         // rendering with our _MainTex. If anything in the game has
@@ -1830,6 +1879,23 @@ namespace BetterMultiplayer
             // dies and the sprite is pooled / recreated). This keeps
             // the dictionary from growing unbounded over a long run.
             if (!sprite) { skinnedSprites.Remove(sprite); return; }
+
+            // === RECOIL REVERT ===
+            // If the sprite is currently showing a recoil / hit-taken
+            // sprite, revert the renderer to the original atlas0
+            // material so the vanilla hit animation plays correctly.
+            // The user's skin PNG likely doesn't have the recoil
+            // frames at the right atlas positions, so the mod-applied
+            // skin texture would show the wrong pixels (typically the
+            // idle frame, which looks like the default skin). The
+            // skinnedSprites entry is kept so when the spriteId
+            // changes back to a non-recoil sprite we re-apply the
+            // skin on the next frame.
+            if (IsShowingRecoilSprite(sprite))
+            {
+                RevertForRecoil(sprite);
+                return;
+            }
 
             Texture2D expected;
             if (!skinnedSprites.TryGetValue(sprite, out expected)) return;
@@ -2188,6 +2254,22 @@ namespace BetterMultiplayer
         public static void ApplyTexture(tk2dSprite sprite, Texture2D tex)
         {
             if (sprite == null || tex == null) return;
+
+            // === RECOIL REVERT ===
+            // If the sprite is currently showing a recoil / hit-taken
+            // sprite, revert the renderer to the original atlas0
+            // material and bail. The user's skin PNG likely doesn't
+            // have the recoil frames at the right atlas positions,
+            // so the mod-applied skin texture would show the wrong
+            // pixels (typically the idle frame, which looks like the
+            // default skin). The vanilla hit animation is the
+            // correct behavior in this case.
+            if (IsShowingRecoilSprite(sprite))
+            {
+                RevertForRecoil(sprite);
+                return;
+            }
+
             var renderer = sprite.GetComponent<MeshRenderer>();
             if (renderer != null)
             {
