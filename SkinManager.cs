@@ -1547,7 +1547,12 @@ namespace BetterMultiplayer
                 var rule = PathRules[i];
                 if (rule.isRemote != isRemote) continue;
                 if (path.IndexOf(rule.fragment, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                return GetSkinTexture(rule.kind, isRemote);
+                Texture2D tex = GetSkinTexture(rule.kind, isRemote);
+                if (BetterMultiplayer.Instance != null && tex == null)
+                {
+                    BetterMultiplayer.Instance.Log($"[ResolveSkin] path='{path}' matched rule '{rule.fragment}' but no texture loaded for {rule.kind}");
+                }
+                return tex;
             }
             return null;
         }
@@ -1671,6 +1676,16 @@ namespace BetterMultiplayer
                 if (tex != null)
                 {
                     tk2dSprite_Awake_Patch.ApplyTexture(sprite, tex);
+                }
+                else if (BetterMultiplayer.Instance != null &&
+                         (marker.originalPath.IndexOf("HeroBox", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          marker.originalPath.IndexOf("Effect", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          marker.originalPath.IndexOf("Fireball", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          marker.originalPath.IndexOf("Scream", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          marker.originalPath.IndexOf("Quake", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          marker.originalPath.IndexOf("Cyclone", StringComparison.OrdinalIgnoreCase) >= 0))
+                {
+                    BetterMultiplayer.Instance.Log($"[Drain] no-rule-match go='{goName}' path='{marker.originalPath}' isRemote={isRemote}");
                 }
             }
         }
