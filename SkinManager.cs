@@ -1271,14 +1271,6 @@ namespace BetterMultiplayer
                         sr.sprite.pivot / sr.sprite.rect.size,
                         sr.sprite.pixelsPerUnit);
                     sr.sprite = newSprite;
-                    // Mirror the SpriteRenderer on the X axis. The
-                    // Custom Knight wing art is authored mirrored
-                    // relative to the in-game sprite, and a
-                    // SpriteRenderer has no _MainTex_ST to flip via
-                    // the material — flipX is the only tool we have
-                    // here. The wings will now face the correct
-                    // direction.
-                    sr.flipX = true;
                     skinnedSpriteRenderers.Add(sr);
                 }
             }
@@ -1613,32 +1605,7 @@ namespace BetterMultiplayer
                 currentShared.mainTexture = expected;
             }
 
-            // === X-AXIS FLIP VIA _MainTex_ST (WINGS ONLY) ===
-            // The monarch-wing atlas (Wings.png) in Custom Knight
-            // skins is authored with the wing art horizontally
-            // mirrored relative to the in-game sprite. The sprite's
-            // baked UVs read the wrong half of the atlas, so we
-            // tell the GPU to sample the texture with a -1 X scale
-            // (mirror on X). The flip is ONLY applied to renderers
-            // that were registered for it (the wings / feathers
-            // / flash), never to the knight, cloak, or other
-            // sprites.
-            //
-            // Vector4(scaleX, scaleY, offsetX, offsetY):
-            //   scaleX = -1, offsetX = 1  → mirror the texture on X
-            if (xFlippedRenderers.Contains(renderer) && currentShared != null)
-            {
-                if (currentShared.HasProperty("_MainTex_ST"))
-                {
-                    currentShared.SetVector("_MainTex_ST", new Vector4(-1f, 1f, 1f, 0f));
-                }
-                else
-                {
-                    currentShared.mainTextureScale = new Vector2(-1f, 1f);
-                }
-            }
-
-            // The game uses "Sprites/Default-ColorFlash" on most
+            // === DISABLE THE WHITE FLASH ===
             // skinned-renderer materials. During a flash effect
             // (e.g. monarch-wings dJumpFlash spawn, dash flash,
             // damage flash) the game sets _FlashAmount to 1 and
@@ -1691,25 +1658,6 @@ namespace BetterMultiplayer
                 blockDirty = true;
             }
             if (blockDirty) renderer.SetPropertyBlock(block);
-
-            // === X-AXIS ALIGNMENT (WINGS ONLY) ===
-            // The monarch-wings Custom Knight skins render the wing
-            // sprite at a different X position than the character
-            // (the wing lands too far to the left). Force the wing
-            // sprite's X to match the character's X every frame.
-            // This is applied AFTER the material/texture work above
-            // so the per-frame guard always has the freshest state.
-            if (xFlippedRenderers.Contains(renderer) && sprite != null
-                && HeroController.instance != null && HeroController.instance.transform != null)
-            {
-                float charX = HeroController.instance.transform.position.x;
-                Vector3 p = sprite.transform.position;
-                if (System.Math.Abs(p.x - charX) > 0.001f)
-                {
-                    p.x = charX;
-                    sprite.transform.position = p;
-                }
-            }
         }
 
         // Walks the whole tracked-sprites dictionary and re-applies
@@ -1813,8 +1761,8 @@ namespace BetterMultiplayer
                     {
                         ApplyTexture(__instance, SkinManager.RemoteVSTexture);
                     }
-                    else if (SkinManager.RemoteWingsTexture != null && 
-                             (name.Contains("dJumpWings") || name.Contains("Wings") || name.Contains("dJumpFlash")))
+                    else if (SkinManager.RemoteWingsTexture != null &&
+                             (name == "dJumpWings" || name == "dJumpFlash" || name == "dJumpFeathers"))
                     {
                         ApplyTexture(__instance, SkinManager.RemoteWingsTexture);
                     }
@@ -1882,11 +1830,18 @@ namespace BetterMultiplayer
                     {
                         ApplyTexture(__instance, SkinManager.LocalVSTexture);
                     }
-                    else if (SkinManager.LocalWingsTexture != null && 
-                             (name.StartsWith("dJumpWings") || name.Contains("Wings") ||
-                              name.StartsWith("dJumpFlash") || name.StartsWith("dJumpFeathers") ||
-                              name.Contains("Feathers")))
+                    else if (SkinManager.LocalWingsTexture != null &&
+                             (name == "dJumpWings" || name == "dJumpFlash" || name == "dJumpFeathers"))
                     {
+                        // For tk2dSprite wings (dJumpWings, dJumpFeathers):
+                        // just set the shared material's mainTexture. Custom
+                        // Knight does exactly this — no unique instance, no
+                        // MaterialPropertyBlock. The sprite's baked UVs handle
+                        // which part of the texture is shown.
+                        //
+                        // For dJumpFlash (a SpriteRenderer, not tk2dSprite):
+                        // it never hits this branch — it's handled by
+                        // ScanAndSkinDJumpFlashes (which uses Sprite.Create).
                         ApplyTexture(__instance, SkinManager.LocalWingsTexture);
                     }
                     else if (SkinManager.LocalSprintTexture != null && 
@@ -1984,20 +1939,6 @@ namespace BetterMultiplayer
                         {
                             inst.SetColor("_FlashColor", Color.white);
                         }
-                        // X-axis flip for wings, applied at creation
-                        // time so the very first frame is correct
-                        // (the per-frame guard keeps it that way).
-                        if (xFlippedRenderers.Contains(renderer))
-                        {
-                            if (inst.HasProperty("_MainTex_ST"))
-                            {
-                                inst.SetVector("_MainTex_ST", new Vector4(-1f, 1f, 1f, 0f));
-                            }
-                            else
-                            {
-                                inst.mainTextureScale = new Vector2(-1f, 1f);
-                            }
-                        }
                         uniqueMaterialInstances[renderer] = inst;
                         renderer.sharedMaterial = inst;
                     }
@@ -2025,18 +1966,6 @@ namespace BetterMultiplayer
                     {
                         inst.SetColor("_FlashColor", Color.white);
                     }
-                    // Re-apply X-flip on cached-instance reuse.
-                    if (xFlippedRenderers.Contains(renderer))
-                    {
-                        if (inst.HasProperty("_MainTex_ST"))
-                        {
-                            inst.SetVector("_MainTex_ST", new Vector4(-1f, 1f, 1f, 0f));
-                        }
-                        else
-                        {
-                            inst.mainTextureScale = new Vector2(-1f, 1f);
-                        }
-                    }
                 }
 
                 // Also push via MaterialPropertyBlock as a belt-and-braces
@@ -2051,20 +1980,6 @@ namespace BetterMultiplayer
             // damage-flash / hit-tint overrides and restore our
             // texture on the next frame.
             skinnedSprites[sprite] = tex;
-
-            // The monarch-wings Custom Knight atlas is authored with
-            // the wing art mirrored on the X axis relative to the
-            // in-game sprite, so the wing sprite's baked UVs read
-            // the wrong half of the atlas. Register this renderer
-            // for an X-axis _MainTex_ST flip so the per-frame guard
-            // mirrors the sampling. This is per-renderer, not
-            // global — the knight, cloak, and other sprites are not
-            // touched.
-            var r = sprite.GetComponent<MeshRenderer>();
-            if (r != null && tex == SkinManager.LocalWingsTexture)
-            {
-                xFlippedRenderers.Add(r);
-            }
         }
 
         public static void ApplyHUDTexture(tk2dSprite sprite, Texture2D tex)
