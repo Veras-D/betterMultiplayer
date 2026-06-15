@@ -163,6 +163,18 @@ namespace BetterMultiplayer
             BetterMultiplayer.Instance.Log($"OnMenuSceneLoaded triggered: Scene name is '{scene.name}'");
             localAnimatorCache = null;
             wasMenuShownLastFrame = false;
+            // Auto-reset mod state on every scene load so old save slots
+            // that have stale renderer references don't keep the mod
+            // locked into a broken state. Wipes unique material instances,
+            // skinned-sprites dictionary, path-resolve queue, etc. and
+            // re-scans every currently-active tk2dSprite + SpriteRenderer
+            // so the new scene's sprites are re-skinned on the first
+            // frame after the transition.
+            try { SkinManager.ResetModState(); }
+            catch (Exception ex)
+            {
+                BetterMultiplayer.Instance.LogError("Error in ResetModState: " + ex);
+            }
             // Auto-show menu on Title screen so players can configure it easily
             if (scene.name == "Menu_Title")
             {

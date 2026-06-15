@@ -1674,6 +1674,89 @@ namespace BetterMultiplayer
                 }
             }
         }
+
+        // Wipes all cached per-renderer / per-sprite mod state and
+        // rescans every currently-active tk2dSprite and SpriteRenderer
+        // in the loaded scenes. Called from BetterMultiplayerMenu
+        // .OnMenuSceneLoaded on every scene transition so that saves
+        // with stale renderer references (e.g. save slot 1 created
+        // before this mod existed) don't keep the mod locked into a
+        // broken state.
+        public static void ResetModState()
+        {
+            if (BetterMultiplayer.Instance != null)
+            {
+                BetterMultiplayer.Instance.Log("[ResetModState] Clearing cached state and rescanning all sprites");
+            }
+            // 1) Wipe dictionaries + queues.
+            tk2dSprite_Awake_Patch.ClearAllState();
+            // 2) Wipe SpriteRenderer scan cache (the dJumpFlash + feather
+            // scan dedupes via a HashSet of already-skinned renderers).
+            if (skinnedSpriteRenderers != null) skinnedSpriteRenderers.Clear();
+            // 3) Force the dJumpFlash scan cooldown to fire next frame.
+            dJumpFlashScanCooldown = 0;
+            // 4) Scan every tk2dSprite in the scene and enqueue it for
+            // path-based resolution. This catches sprites that already
+            // exist (not just ones that wake up after the reset).
+            try
+            {
+                tk2dSprite[] allSprites = UnityEngine.Object.FindObjectsOfType<tk2dSprite>(true);
+                for (int i = 0; i < allSprites.Length; i++)
+                {
+                    var sprite = allSprites[i];
+                    if (sprite == null || !sprite) continue;
+                    if (sprite.gameObject == null) continue;
+                    string n = sprite.gameObject.name;
+                    if (string.IsNullOrEmpty(n)) continue;
+                    // Same geo opt-out as the Awake_Hook.
+                    if (n.StartsWith("geo", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (sprite.Collection != null &&
+                        !string.IsNullOrEmpty(sprite.Collection.name) &&
+                        sprite.Collection.name.IndexOf("Geo", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        continue;
+                    }
+                    // Build path and attach a marker (the Awake_Hook
+                    // would normally do this, but for sprites that
+                    // were Awake before our hook installed, we do it
+                    // here so the path-resolver has the data).
+                    UnityEngine.SceneManagement.Scene sc = sprite.gameObject.scene;
+                    string sceneName = sc.IsValid() ? sc.name : "";
+                    string goPath = sprite.gameObject.GetPath(true);
+                    string fullPath = string.IsNullOrEmpty(sceneName)
+                        ? goPath
+                        : sceneName + "/" + goPath;
+                    var marker = sprite.gameObject.GetComponent<GlobalSwapMarker>();
+                    if (marker == null) marker = sprite.gameObject.AddComponent<GlobalSwapMarker>();
+                    if (string.IsNullOrEmpty(marker.originalPath))
+                    {
+                        marker.originalPath = fullPath;
+                    }
+                    EnqueueSpriteForPathResolve(sprite);
+                }
+            }
+            catch (Exception ex)
+            {
+                if (BetterMultiplayer.Instance != null)
+                {
+                    BetterMultiplayer.Instance.LogError("Error in ResetModState sprite scan: " + ex);
+                }
+            }
+            // 5) Drain the queue immediately so the first frame after
+            // the scene load already has the skin applied (no flash of
+            // vanilla atlas).
+            DrainPathResolveQueue();
+            // 6) Reset charm backups so re-applying charms uses fresh
+            // references for the new scene's CharmIconList.
+            backupsSaved = false;
+            originalSpriteList = null;
+            // 7) Re-apply charm skins now that the new scene's
+            // CharmIconList has been constructed.
+            if (CharmIconList.Instance != null)
+            {
+                ApplyCharmSkins(CharmIconList.Instance);
+            }
+        }
     }
  
     [HarmonyPatch(typeof(tk2dSprite), "Awake")]
@@ -1885,6 +1968,26 @@ namespace BetterMultiplayer
                 if (sprite == null || !sprite) { skinnedSprites.Remove(sprite); continue; }
                 EnsureSkinStaysApplied(sprite);
             }
+        }
+
+        // Clear all cached per-renderer / per-sprite mod state. Called
+        // from SkinManager.ResetModState on every scene load so old
+        // save slots that have stale renderer references don't keep
+        // the mod locked into a broken state.
+        //
+        // We deliberately do NOT destroy the cached Material instances
+        // — they're owned by Unity and get garbage-collected when the
+        // renderers themselves are destroyed by the scene transition.
+        // We just clear the references so the next scene's renderers
+        // get fresh entries.
+        public static void ClearAllState()
+        {
+            skinnedSprites.Clear();
+            originalSharedMaterials.Clear();
+            uniqueMaterialInstances.Clear();
+            xFlippedRenderers.Clear();
+            PathResolveQueue.Pending.Clear();
+            PathResolveQueue.InFlight.Clear();
         }
 
         public static void Postfix(tk2dSprite __instance)
