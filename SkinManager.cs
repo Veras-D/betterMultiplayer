@@ -779,63 +779,16 @@ namespace BetterMultiplayer
             // sprites and materials exist. Helps identify which element is glitchy.
             DumpHUDStructure(hudCanvas);
 
-            // One-time diagnostic: log every HUD GameObject's active/enabled
-            // state and the actual rendered sprite name. This is the key
-            // diagnostic the user needs to see — if the Health GameObjects
-            // are reporting enabled=false, the game is hiding them, and
-            // no amount of mod-level texture work will make them visible.
-            DumpHUDVisibility(hudCanvas);
-
-            // === HUD texture: replace the entire HUD atlas ===
-            // The standard Custom Knight approach: get the material from the
-            // "Health 1" sprite's current sprite definition and set its
-            // mainTexture to the skin's Hud.png. Since every HUD sprite
-            // shares the same material (or materialInst), this single swap
-            // updates the entire HUD atlas.
-            //
-            // We also reset the _MainTex_ST tiling/offset to (1,1,0,0) and
-            // set the new texture's wrapMode to Clamp. Without this, leftover
-            // values from the original DXT5 atlas cause the new texture to be
-            // sampled at wrong scale/offset, which is what produced the
-            // "unscaled" / mismapped sprite look the user reported.
-            if (LocalHUDTexture != null)
-            {
-                BetterMultiplayer.Instance.Log($"[HUD] Hud.png size: {LocalHUDTexture.width}x{LocalHUDTexture.height}");
-                // Find ALL distinct materials used by HUD sprites, not just
-                // "Health 1". The HUD has multiple collections (HUD Cln,
-                // HUD_Soulorb_fills, Charm Blocker Cln, HUD Extras Cln) and
-                // each may use a different material. Missing any of them
-                // leaves a subset of HUD sprites using the default atlas.
-                HashSet<Material> updatedMaterials = new HashSet<Material>();
-                int spriteCount = 0;
-                foreach (var sprite in hudCanvas.GetComponentsInChildren<tk2dSprite>(true))
-                {
-                    if (sprite == null || sprite.Collection == null) continue;
-                    var def = sprite.GetCurrentSpriteDef();
-                    if (def == null) continue;
-                    spriteCount++;
-
-                    if (def.material != null && updatedMaterials.Add(def.material))
-                    {
-                        if (def.material.mainTexture != LocalHUDTexture)
-                        {
-                            def.material.mainTexture = LocalHUDTexture;
-                        }
-                        def.material.SetTextureScale("_MainTex", new Vector2(1f, 1f));
-                        def.material.SetTextureOffset("_MainTex", new Vector2(0f, 0f));
-                    }
-                    if (def.materialInst != null && def.materialInst != def.material && updatedMaterials.Add(def.materialInst))
-                    {
-                        if (def.materialInst.mainTexture != LocalHUDTexture)
-                        {
-                            def.materialInst.mainTexture = LocalHUDTexture;
-                        }
-                        def.materialInst.SetTextureScale("_MainTex", new Vector2(1f, 1f));
-                        def.materialInst.SetTextureOffset("_MainTex", new Vector2(0f, 0f));
-                    }
-                }
-                BetterMultiplayer.Instance.Log($"[UpdateHUDSkin] Applied HUD.png to {updatedMaterials.Count} material(s) across {spriteCount} sprites");
-            }
+            // === HUD texture: DISABLED ===
+            // The skin's Hud.png is no longer applied to the HUD atlas.
+            // The default Hollow Knight HUD is used regardless of which
+            // skin is active. This is the safe default — applying
+            // custom Hud.png files to the Unity 6 runtime has proven
+            // fragile (mismapped sprites, missing Health masks,
+            // regressions with Joni Health / Binding state
+            // transitions, etc.). The rest of the skin (Knight,
+            // OrbFull, Cloak, VS, Wings, effects) still works.
+            BetterMultiplayer.Instance.Log("[UpdateHUDSkin] HUD skin disabled — using default vanilla HUD atlas");
 
             // === OrbFull texture: replace the "Orb Full" SpriteRenderer's sprite ===
             // The soul vessel uses a UGUI SpriteRenderer, not tk2dSprite.
