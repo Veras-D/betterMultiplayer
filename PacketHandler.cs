@@ -144,6 +144,24 @@ namespace BetterMultiplayer
                     string skinName = parts[1];
                     SkinManager.ApplyRemoteSkin(skinName);
                 }
+                else if (header == "SPELL" && parts.Length >= 11)
+                {
+                    // Remote player cast a spell: spawn the same
+                    // projectile locally at the received position.
+                    // SPELL|<name>|<px>|<py>|<pz>|<rx>|<ry>|<rz>|<scaleX>|<vx>|<vy>
+                    string spellName = parts[1];
+                    float px = float.Parse(parts[2], CultureInfo.InvariantCulture);
+                    float py = float.Parse(parts[3], CultureInfo.InvariantCulture);
+                    float pz = float.Parse(parts[4], CultureInfo.InvariantCulture);
+                    float rx = float.Parse(parts[5], CultureInfo.InvariantCulture);
+                    float ry = float.Parse(parts[6], CultureInfo.InvariantCulture);
+                    float rz = float.Parse(parts[7], CultureInfo.InvariantCulture);
+                    float scaleX = float.Parse(parts[8], CultureInfo.InvariantCulture);
+                    float vx = float.Parse(parts[9], CultureInfo.InvariantCulture);
+                    float vy = float.Parse(parts[10], CultureInfo.InvariantCulture);
+
+                    SpellReplicator.OnRemoteSpellReceived(spellName, px, py, pz, rx, ry, rz, scaleX, vx, vy);
+                }
                 else if (header == "SHADE_STATE" && parts.Length >= 6)
                 {
                     string scene = parts[1];

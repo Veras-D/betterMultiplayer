@@ -341,6 +341,11 @@ namespace BetterMultiplayer
             // than the main knight sprite) gets its path resolved to
             // the right skin texture and the texture is applied.
             SkinManager.DrainPathResolveQueue();
+            // Drain the spell-replicator's pending velocity queue.
+            // Spells whose velocity we still need to capture get
+            // checked here — the FSM action sets velocity one frame
+            // after Spawn, so we wait one LateUpdate before reading it.
+            SpellReplicator.TickPending();
         }
 
         private void SendPosition()
