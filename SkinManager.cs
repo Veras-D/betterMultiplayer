@@ -1688,7 +1688,9 @@ namespace BetterMultiplayer
                         ApplyTexture(__instance, SkinManager.LocalVSTexture);
                     }
                     else if (SkinManager.LocalWingsTexture != null && 
-                             (name.StartsWith("dJumpWings") || name.Contains("Wings") || name.StartsWith("dJumpFlash")))
+                             (name.StartsWith("dJumpWings") || name.Contains("Wings") ||
+                              name.StartsWith("dJumpFlash") || name.StartsWith("dJumpFeathers") ||
+                              name.Contains("Feathers")))
                     {
                         ApplyTexture(__instance, SkinManager.LocalWingsTexture);
                     }
@@ -1711,28 +1713,6 @@ namespace BetterMultiplayer
                              (name.StartsWith("Abyss Shriek") || name.Contains("Abyss Scream") || name.Contains("Shriek")))
                     {
                         ApplyTexture(__instance, SkinManager.LocalShriekTexture);
-                    }
-                    // === FALLBACK: any other local sprite whose parent
-                    // is HeroController and that didn't match one of
-                    // the specific checks above ===
-                    //
-                    // The hit / damage animation swaps the main knight
-                    // sprite out for a differently-named sprite (e.g.
-                    // a "Hit" or recoil sprite) and runs that for the
-                    // entire duration of the hit. The previous check
-                    // `name == "Sprite"` would not match those sprites
-                    // and so the skin was lost for the full hit
-                    // animation. This catch-all applies the knight
-                    // skin to ANY local tk2dSprite under HeroController
-                    // — the specific checks above (Cloak, Hollow Shade,
-                    // Fireball, Dash Effect, etc.) still get priority
-                    // because they're earlier in the if/else chain.
-                    else if (__instance.transform.parent != null
-                             && HeroController.instance != null
-                             && __instance.transform.parent.gameObject == HeroController.instance.gameObject
-                             && SkinManager.LocalSkinTexture != null)
-                    {
-                        ApplyTexture(__instance, SkinManager.LocalSkinTexture);
                     }
                 }
             }
@@ -1938,6 +1918,56 @@ namespace BetterMultiplayer
             catch (Exception ex)
             {
                 BetterMultiplayer.Instance.LogError("Error in GeoControl Start Patch: " + ex);
+            }
+        }
+    }
+
+    // The monarch-wings dJumpFlash effect is a UGUI SpriteRenderer
+    // (not a tk2dSprite), so the tk2dSprite_Awake_Patch never sees
+    // it. The flash sprites were therefore left on the default
+    // vanilla atlas, making the monarch wings look half-skinned
+    // (wings were the player's skin, flash was vanilla).
+    //
+    // This patch hooks SpriteRenderer.Awake and replaces the
+    // sprite on any SpriteRenderer whose GameObject name starts
+    // with "dJumpFlash" with a new sprite built from the skin's
+    // Wings.png texture. Same approach as the OrbFull replacement
+    // in UpdateHUDSkin (which is also a SpriteRenderer).
+    [HarmonyPatch(typeof(SpriteRenderer), "Awake")]
+    public static class SpriteRenderer_DJumpFlash_Patch
+    {
+        public static void Postfix(SpriteRenderer __instance)
+        {
+            try
+            {
+                if (__instance == null || __instance.gameObject == null) return;
+                string name = __instance.gameObject.name;
+
+                if (SkinManager.LocalWingsTexture == null) return;
+
+                bool isFlashSprite =
+                    name.StartsWith("dJumpFlash", StringComparison.OrdinalIgnoreCase) ||
+                    name.StartsWith("dJumpFeathers", StringComparison.OrdinalIgnoreCase) ||
+                    (name.IndexOf("Flash", StringComparison.OrdinalIgnoreCase) >= 0 &&
+                     __instance.transform.parent != null &&
+                     __instance.transform.parent.name.IndexOf("dJump", StringComparison.OrdinalIgnoreCase) >= 0);
+
+                if (!isFlashSprite) return;
+                if (__instance.sprite == null) return;
+
+                Sprite newSprite = Sprite.Create(
+                    SkinManager.LocalWingsTexture,
+                    new Rect(0f, 0f, SkinManager.LocalWingsTexture.width, SkinManager.LocalWingsTexture.height),
+                    __instance.sprite.pivot / __instance.sprite.rect.size,
+                    __instance.sprite.pixelsPerUnit);
+                __instance.sprite = newSprite;
+            }
+            catch (Exception ex)
+            {
+                if (BetterMultiplayer.Instance != null)
+                {
+                    BetterMultiplayer.Instance.LogError("Error in SpriteRenderer_DJumpFlash_Patch: " + ex);
+                }
             }
         }
     }
