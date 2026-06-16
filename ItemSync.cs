@@ -2,9 +2,28 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using HarmonyLib;
+using ItemSyncMod;
+using UnityEngine;
 
 namespace BetterMultiplayer
 {
+    // Built-in item sync, reimplemented on top of the label-based
+    // ItemSyncMod.Connection API (which mirrors the original
+    // fireb0rn/ItemSync API that DeathSync and other HKMP addons
+    // hook into). Addons can subscribe to Connection.OnDataReceived
+    // with their own label to piggyback on the same transport.
+    //
+    // Built-in labels (see ItemSyncMod.ItemSyncMod.Labels):
+    //   "itemsync"    — PlayerData bool / int changes
+    //   "persistbool" — PersistentBoolItem state (levers, walls, etc.)
+    //   "persistint"  — PersistentIntItem state
+    //   "listadd"     — additions to PlayerData lists (charms, etc.)
+    //
+    // Built-in data formats (all pipe-delimited):
+    //   itemsync    : <type>|<key>|<val>           type = "bool" | "int"
+    //   persistbool : <scene>|<id>|<activated>|<semi>
+    //   persistint  : <scene>|<id>|<val>|<semi>
+    //   listadd     : <listName>|<val>
     public static class ItemSync
     {
         public static bool isSyncing = false;
@@ -12,87 +31,78 @@ namespace BetterMultiplayer
         private static readonly Dictionary<string, bool> cachedBools = new Dictionary<string, bool>();
         private static readonly Dictionary<string, int> cachedInts = new Dictionary<string, int>();
         private static float lastPollTime = 0f;
-        private const float PollInterval = 1.0f; // Check for changes every 1 second
+        private const float PollInterval = 0.5f;
 
         private static readonly Dictionary<string, HashSet<string>> ListCaches = new Dictionary<string, HashSet<string>>()
         {
-            { "scenesMapped", new HashSet<string>() },
-            { "scenesEncounteredBench", new HashSet<string>() },
-            { "scenesGrubRescued", new HashSet<string>() },
-            { "scenesFlameCollected", new HashSet<string>() },
-            { "scenesEncounteredCocoon", new HashSet<string>() },
-            { "scenesEncounteredDreamPlant", new HashSet<string>() },
-            { "scenesEncounteredDreamPlantC", new HashSet<string>() }
+            { "royalCharmEquips", new HashSet<string>() },
+            { "charmEquips", new HashSet<string>() },
         };
 
+        // Whitelist of PlayerData fields to sync. Only bool/int
+        // fields are supported. List fields are hardcoded above
+        // (charmEquips, royalCharmEquips) because they need a
+        // different polling strategy.
         private static readonly HashSet<string> Whitelist = new HashSet<string>()
         {
-            // Abilities
-            "hasDash", "canDash", "hasWalljump", "canWallJump", "hasDoubleJump", "hasSuperDash", "canSuperDash", "hasAcidArmour", 
-            "hasDreamNail", "dreamNailUpgraded", "hasShadowDash", "canShadowDash", "hasWaterSwim", "hasLantern",
-            "hasCyclone", "hasGreatSlash", "hasDashSlash", "canOvercharm",
-            // Spells
-            "fireballLevel", "quakeLevel", "screechLevel",
-            // Nail
+            "hasDash", "canDash",
+            "hasWalljump", "canWallJump",
+            "hasDoubleJump",
+            "hasSuperDash", "canSuperDash",
+            "hasAcidArmour",
+            "hasDreamNail",
+            "hasLantern",
+            "hasCyclone",
+            "hasUpwardSlash", "hasDashSlash",
+            "fireballLevel", "quakeLevel", "screamLevel",
             "nailSmithUpgrades",
-            // HP/Soul
-            "maxHealth", "maxHealthBase", "maxHealthCap", "heartPieces", "heartPieceMax",
-            // Stags
-            "openedCrossroads", "openedGreenpath", "openedFungalWastes", "openedRuins1", "openedRuins2",
-            "openedRestingGrounds", "openedDeepnest", "openedHiddenStation", "openedStagNest", "openedGardensStagStation",
-            "stationsOpened", "hasStagKey",
-            // Benches
+            "maxHealth", "maxHealthBase",
+            "health", "healthBlue",
+            "heartPieces",
+            "vesselFragments", "MPReserveMax", "MPReserve",
+            "simpleKeys",
+            "ore",
+            "ghostCoins",
+            "travellersPassed",
+            "sewersPassed",
+            "openedTown", "openedCrossroads", "openedGreenpath",
+            "openedFungalWastes", "openedRuins1", "openedRuins2",
+            "openedRestingGrounds", "openedDeepnest", "openedHiddenStation",
+            "openedStagNest", "openedGardensStagStation",
             "tollBenchCity", "tollBenchQueensGardens", "tollBenchAbyss",
-            "maxMP", "MPReserveMax", "vesselFragments", "vesselFragmentMax",
-            // Keys & Maps
-            "simpleKeys", "hasLoveKey", "hasSpaKey", "hasSlykey", "gaveSlykey", "hasTramPass", 
-            "hasWhiteKey", "hasGodfinder", "hasKingBrand", "kingsBrand", "hasMap", "mapQuill",
-            "hasCityKey", "gotLurkerKey", "hasMenderKey",
-            // Dreamers & fragile / unbreakable upgrades & flower quest
-            "maskBrokenLurien", "maskBrokenHegemol", "maskBrokenMonomon",
-            "gaveFragileHeart", "gaveFragileGreed", "gaveFragileStrength",
-            "fragileHealth_unbreakable", "fragileGreed_unbreakable", "fragileStrength_unbreakable",
-            "brokenCharm_23", "brokenCharm_24", "brokenCharm_25",
-            "hasXunFlower", "xunFlowerBroken", "xunFlowerGiven",
-            "givenGodseekerFlower", "givenOroFlower", "givenWhiteLadyFlower", "givenEmilitiaFlower",
-            // Maps
-            "mapDirtmouth", "mapCrossroads", "mapGreenpath", "mapFogCanyon", "mapRoyalGardens", 
-            "mapFungalWastes", "mapCity", "mapWaterways", "mapMines", "mapDeepnest", "mapCliffs", 
-            "mapOutskirts", "mapRestingGrounds", "mapAbyss",
-            // Pins
-            "hasPin", "hasPinBench", "hasPinCocoon", "hasPinDreamPlant", "hasPinGuardian", 
-            "hasPinBlackEgg", "hasPinShop", "hasPinSpa", "hasPinStag", "hasPinTram", 
-            "hasPinGhost", "hasPinGrub",
-            // Markers
-            "hasMarker", "hasMarker_r", "hasMarker_b", "hasMarker_y", "hasMarker_w", 
-            "spareMarkers_r", "spareMarkers_b", "spareMarkers_y", "spareMarkers_w",
-            // Grubs & Ores
-            "grubsCollected", "ore",
-            // Trinkets
-            "trinket1", "trinket2", "trinket3", "trinket4",
-            // Dream nail essence
-            "dreamOrbs", "dreamOrbsSpent", "hasDreamGate",
-            // Grimm troupe
-            "grimmChildLevel", "gotGrimmNotch",
-            // Shop Inventory (Sly & Salubra purchases)
-            "slyShellFrag1", "slyShellFrag2", "slyShellFrag3", "slyShellFrag4",
-            "slyVesselFrag1", "slyVesselFrag2", "slyVesselFrag3", "slyVesselFrag4",
-            "slyNotch1", "slyNotch2", "slySimpleKey", "slyRancidEgg", "gotSlyCharm",
-            "salubraNotch1", "salubraNotch2", "salubraNotch3", "salubraNotch4", "salubraBlessing"
+            "hasLoveKey", "hasTramPass", "hasWhiteKey",
+            "gotCharm_1", "gotCharm_2", "gotCharm_3", "gotCharm_4", "gotCharm_5",
+            "gotCharm_6", "gotCharm_7", "gotCharm_8", "gotCharm_9", "gotCharm_10",
+            "gotCharm_11", "gotCharm_22", "gotCharm_27", "gotCharm_28", "gotCharm_29",
+            "gotCharm_30", "gotCharm_31", "gotCharm_32", "gotCharm_33", "gotCharm_38",
+            "hasKingFragment", "hasQueenFragment", "hasVoidFragment",
+            "maskBrokenHegemol", "maskBrokenLurien", "maskBrokenMonomon",
+            "killedMageLord", "killedMageLordDream",
+            "killedDungDefender", "killedBlackKnight",
+            "killedInfectedKnight", "killedMimicSpider",
+            "killedTraitorLord",
+            "killedZote", "killedHornet",
+            "killedMegaMossCharger", "killedMantisLords",
+            "killedOblobbles", "killedFlukemarm",
+            "killedBrokenVessel", "killedBroodingMawlek",
+            "killedNosk", "killedWingedNosk",
+            "killedCollector", "killedCrystalGuardian",
+            "killedEnragedGuardian", "killedLobbedLancer",
+            "killedMimicSpider",
+            "gotMapCrossroads", "gotMapGreenpath", "gotMapFogCanyon",
+            "gotMapFungalWastes", "gotMapCity", "gotMapDeepnest",
+            "gotMapRoyalGardens", "gotMapRestingGrounds",
+            "gotMapKingdomsEdge", "gotMapHowlingCliffs",
+            "gotMapAbyss", "gotMapWhitePalace", "gotMapColosseum",
         };
-
-        static ItemSync()
-        {
-            // Add charm entries gotCharm_1 to gotCharm_40 dynamically
-            for (int i = 1; i <= 40; i++)
-            {
-                Whitelist.Add("gotCharm_" + i);
-            }
-            Whitelist.Add("charmSlots");
-        }
 
         public static void Initialize()
         {
+            // Subscribe to incoming ISC packets. We filter by label
+            // inside the handler so addons can subscribe to their
+            // own labels via the same Connection.
+            ItemSyncMod.ItemSyncMod.Connection.OnDataReceived += OnIscDataReceived;
+
             foreach (var key in Whitelist)
             {
                 try
@@ -110,9 +120,60 @@ namespace BetterMultiplayer
             }
         }
 
+        // Incoming ISC packet dispatch. Label-based so addons can
+        // also subscribe to Connection.OnDataReceived for their own
+        // labels and we'll just ignore their labels here.
+        private static void OnIscDataReceived(object sender, DataReceivedEvent e)
+        {
+            if (e.Handled) return;
+            if (e.Label == ItemSyncMod.ItemSyncMod.Labels.ItemSync)
+            {
+                e.Handled = true;
+                // data format: <type>|<key>|<val>
+                var parts = e.Data.Split('|');
+                if (parts.Length >= 3)
+                {
+                    ApplyNetworkChange(parts[0], parts[1], parts[2]);
+                }
+            }
+            else if (e.Label == ItemSyncMod.ItemSyncMod.Labels.PersistBool)
+            {
+                e.Handled = true;
+                // data format: <scene>|<id>|<activated>|<semi>
+                var parts = e.Data.Split('|');
+                if (parts.Length >= 4)
+                {
+                    bool activated = bool.Parse(parts[2]);
+                    bool semi = bool.Parse(parts[3]);
+                    ApplyPersistentBool(parts[0], parts[1], activated, semi);
+                }
+            }
+            else if (e.Label == ItemSyncMod.ItemSyncMod.Labels.PersistInt)
+            {
+                e.Handled = true;
+                // data format: <scene>|<id>|<val>|<semi>
+                var parts = e.Data.Split('|');
+                if (parts.Length >= 4)
+                {
+                    int val = int.Parse(parts[2]);
+                    bool semi = bool.Parse(parts[3]);
+                    ApplyPersistentInt(parts[0], parts[1], val, semi);
+                }
+            }
+            else if (e.Label == ItemSyncMod.ItemSyncMod.Labels.ListAdd)
+            {
+                e.Handled = true;
+                // data format: <listName>|<val>
+                var parts = e.Data.Split('|');
+                if (parts.Length >= 2)
+                {
+                    ApplyListAdd(parts[0], parts[1]);
+                }
+            }
+        }
+
         public static void Update()
         {
-            // Self-heal any broken ability states locally
             if (PlayerData.instance != null)
             {
                 if (PlayerData.instance.hasDash && !PlayerData.instance.canDash)
@@ -167,9 +228,9 @@ namespace BetterMultiplayer
                         {
                             cachedBools[key] = val;
                             BetterMultiplayer.Instance.Log($"[Local Cache] Detected change: {key} = {val}");
-                            if (val) // only sync if it became true
+                            if (val)
                             {
-                                NetworkManager.SendPacket($"ITEM|bool|{key}|True");
+                                SendItemSyncBool(key, true);
                             }
                         }
                     }
@@ -196,7 +257,7 @@ namespace BetterMultiplayer
 
                             if (shouldSend)
                             {
-                                NetworkManager.SendPacket($"ITEM|int|{key}|{val}");
+                                SendItemSyncInt(key, val);
                             }
                         }
                     }
@@ -206,6 +267,43 @@ namespace BetterMultiplayer
                     BetterMultiplayer.Instance.LogError($"Error polling field {key}: {ex.Message}");
                 }
             }
+        }
+
+        // === SEND HELPERS (use the label-based Connection API) ===
+
+        private static void SendItemSyncBool(string key, bool val)
+        {
+            ItemSyncMod.ItemSyncMod.Connection.SendDataToAll(
+                ItemSyncMod.ItemSyncMod.Labels.ItemSync,
+                "bool|" + key + "|" + val);
+        }
+
+        private static void SendItemSyncInt(string key, int val)
+        {
+            ItemSyncMod.ItemSyncMod.Connection.SendDataToAll(
+                ItemSyncMod.ItemSyncMod.Labels.ItemSync,
+                "int|" + key + "|" + val);
+        }
+
+        private static void SendPersistBool(string scene, string id, bool activated, bool semi)
+        {
+            ItemSyncMod.ItemSyncMod.Connection.SendDataToAll(
+                ItemSyncMod.ItemSyncMod.Labels.PersistBool,
+                scene + "|" + id + "|" + activated + "|" + semi);
+        }
+
+        private static void SendPersistInt(string scene, string id, int val, bool semi)
+        {
+            ItemSyncMod.ItemSyncMod.Connection.SendDataToAll(
+                ItemSyncMod.ItemSyncMod.Labels.PersistInt,
+                scene + "|" + id + "|" + val + "|" + semi);
+        }
+
+        private static void SendListAdd(string listName, string val)
+        {
+            ItemSyncMod.ItemSyncMod.Connection.SendDataToAll(
+                ItemSyncMod.ItemSyncMod.Labels.ListAdd,
+                listName + "|" + val);
         }
 
         public static void ApplyNetworkChange(string type, string key, string val)
@@ -221,17 +319,15 @@ namespace BetterMultiplayer
                 {
                     bool parsedVal = bool.Parse(val);
                     bool current = (bool)field.GetValue(PlayerData.instance);
-                    
-                    // Only sync if the incoming value is true and we don't have it yet
+
                     if (parsedVal && !current)
                     {
                         BetterMultiplayer.Instance.Log($"[Network] Syncing bool {key} = {parsedVal}");
                         isSyncing = true;
                         field.SetValue(PlayerData.instance, parsedVal);
-                        cachedBools[key] = parsedVal; // Update cache
+                        cachedBools[key] = parsedVal;
                         changed = true;
 
-                        // Reset respawning enemies when partner sits at a bench
                         if (key == "atBench" && parsedVal && GameManager.instance != null)
                         {
                             BetterMultiplayer.Instance.Log("[Network] Partner sat at bench, resetting semi-persistent items/enemies.");
@@ -259,7 +355,6 @@ namespace BetterMultiplayer
                         BetterMultiplayer.Instance.Log($"[Network] Syncing int {key} = {parsedVal}");
                         isSyncing = true;
 
-                        // If max health is increasing, heal the player's current health by the difference
                         if ((key == "maxHealth" || key == "maxHealthBase") && parsedVal > current)
                         {
                             int diff = parsedVal - current;
@@ -269,7 +364,7 @@ namespace BetterMultiplayer
                         }
 
                         field.SetValue(PlayerData.instance, parsedVal);
-                        cachedInts[key] = parsedVal; // Update cache
+                        cachedInts[key] = parsedVal;
                         changed = true;
                     }
                 }
@@ -305,7 +400,7 @@ namespace BetterMultiplayer
             {
                 BetterMultiplayer.Instance.Log($"[Local] Player set bool {name} = {val}");
                 cachedBools[name] = val;
-                NetworkManager.SendPacket($"ITEM|bool|{name}|{val}");
+                SendItemSyncBool(name, val);
             }
         }
 
@@ -315,7 +410,7 @@ namespace BetterMultiplayer
             {
                 BetterMultiplayer.Instance.Log($"[Local] Player set int {name} = {val}");
                 cachedInts[name] = val;
-                NetworkManager.SendPacket($"ITEM|int|{name}|{val}");
+                SendItemSyncInt(name, val);
             }
         }
 
@@ -340,7 +435,7 @@ namespace BetterMultiplayer
                         cachedBools[key] = val;
                         if (val)
                         {
-                            NetworkManager.SendPacket($"ITEM|bool|{key}|True");
+                            SendItemSyncBool(key, true);
                         }
                     }
                     else if (field.FieldType == typeof(int))
@@ -349,7 +444,7 @@ namespace BetterMultiplayer
                         cachedInts[key] = val;
                         if (val > 0)
                         {
-                            NetworkManager.SendPacket($"ITEM|int|{key}|{val}");
+                            SendItemSyncInt(key, val);
                         }
                     }
                 }
@@ -368,8 +463,7 @@ namespace BetterMultiplayer
                 if (SceneData.instance == null) return;
 
                 isSyncing = true;
-                
-                // Find or create the persistent state in global storage
+
                 PersistentBoolData data = SceneData.instance.persistentBoolItems.Find(x => x.id == id && x.sceneName == sceneName);
                 if (data == null)
                 {
@@ -381,7 +475,6 @@ namespace BetterMultiplayer
 
                 BetterMultiplayer.Instance.Log($"[PersistentBool] Received activation for {id} in {sceneName}");
 
-                // If players are in the same scene, instantly update the visual object (pull lever, break wall, open chest)
                 if (UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == sceneName)
                 {
                     foreach (var item in UnityEngine.Object.FindObjectsOfType<PersistentBoolItem>())
@@ -441,7 +534,7 @@ namespace BetterMultiplayer
                                     {
                                         cache.Add(item);
                                         BetterMultiplayer.Instance.Log($"[Local Cache] Detected list add in {listName}: {item}");
-                                        NetworkManager.SendPacket($"LIST_ADD|{listName}|{item}");
+                                        SendListAdd(listName, item);
                                     }
                                 }
                             }
@@ -460,7 +553,7 @@ namespace BetterMultiplayer
             try
             {
                 if (PlayerData.instance == null) return;
-                
+
                 FieldInfo field = typeof(PlayerData).GetField(listName, BindingFlags.Public | BindingFlags.Instance | BindingFlags.NonPublic);
                 if (field != null)
                 {
@@ -537,7 +630,7 @@ namespace BetterMultiplayer
             }
             catch (Exception ex)
             {
-                BetterMultiplayer.Instance.LogError($"Error applying persistent int: " + ex);
+                BetterMultiplayer.Instance.LogError($"Error applying persistent int: " + ex.Message);
             }
             finally
             {
@@ -573,7 +666,10 @@ namespace BetterMultiplayer
             {
                 string sceneName = string.IsNullOrEmpty(persistentBoolData.sceneName) ? UnityEngine.SceneManagement.SceneManager.GetActiveScene().name : persistentBoolData.sceneName;
                 BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {persistentBoolData.id} in {sceneName}: {persistentBoolData.activated}");
-                NetworkManager.SendPacket($"PERSIST_BOOL|{sceneName}|{persistentBoolData.id}|{persistentBoolData.activated}|{persistentBoolData.semiPersistent}");
+                // Use the label-based send helper
+                ItemSyncMod.ItemSyncMod.Connection.SendDataToAll(
+                    ItemSyncMod.ItemSyncMod.Labels.PersistBool,
+                    sceneName + "|" + persistentBoolData.id + "|" + persistentBoolData.activated + "|" + persistentBoolData.semiPersistent);
             }
         }
     }
@@ -590,7 +686,9 @@ namespace BetterMultiplayer
                 bool activated = __instance.persistentBoolData.activated;
                 bool semi = __instance.persistentBoolData.semiPersistent;
                 BetterMultiplayer.Instance.Log($"[PersistentBool] Broadcasting activation for {id} in {sceneName} via SaveState: {activated}");
-                NetworkManager.SendPacket($"PERSIST_BOOL|{sceneName}|{id}|{activated}|{semi}");
+                ItemSyncMod.ItemSyncMod.Connection.SendDataToAll(
+                    ItemSyncMod.ItemSyncMod.Labels.PersistBool,
+                    sceneName + "|" + id + "|" + activated + "|" + semi);
             }
         }
     }
@@ -604,7 +702,9 @@ namespace BetterMultiplayer
             {
                 string sceneName = string.IsNullOrEmpty(persistentIntData.sceneName) ? UnityEngine.SceneManagement.SceneManager.GetActiveScene().name : persistentIntData.sceneName;
                 BetterMultiplayer.Instance.Log($"[PersistentInt] Broadcasting value for {persistentIntData.id} in {sceneName}: {persistentIntData.value}");
-                NetworkManager.SendPacket($"PERSIST_INT|{sceneName}|{persistentIntData.id}|{persistentIntData.value}|{persistentIntData.semiPersistent}");
+                ItemSyncMod.ItemSyncMod.Connection.SendDataToAll(
+                    ItemSyncMod.ItemSyncMod.Labels.PersistInt,
+                    sceneName + "|" + persistentIntData.id + "|" + persistentIntData.value + "|" + persistentIntData.semiPersistent);
             }
         }
     }
@@ -621,7 +721,9 @@ namespace BetterMultiplayer
                 int value = __instance.persistentIntData.value;
                 bool semi = __instance.persistentIntData.semiPersistent;
                 BetterMultiplayer.Instance.Log($"[PersistentInt] Broadcasting value for {id} in {sceneName} via SaveState: {value}");
-                NetworkManager.SendPacket($"PERSIST_INT|{sceneName}|{id}|{value}|{semi}");
+                ItemSyncMod.ItemSyncMod.Connection.SendDataToAll(
+                    ItemSyncMod.ItemSyncMod.Labels.PersistInt,
+                    sceneName + "|" + id + "|" + value + "|" + semi);
             }
         }
     }

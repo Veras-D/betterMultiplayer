@@ -162,6 +162,23 @@ namespace BetterMultiplayer
 
                     SpellReplicator.OnRemoteSpellReceived(spellName, px, py, pz, rx, ry, rz, scaleX, vx, vy);
                 }
+                else if (header == "ISC" && parts.Length >= 3)
+                {
+                    // Generic ItemSync-label packet. Fires
+                    // ItemSyncMod.Connection.OnDataReceived so
+                    // addons (and our own built-in sync) can
+                    // subscribe by label.
+                    //
+                    // Wire format: ISC|<label>|<data>
+                    // data may itself contain pipes, so we
+                    // re-join everything after the second pipe.
+                    // ISC|persistbool|Room_01|Breakable_Wall|True|False
+                    //                ^label          ^data starts here
+                    string label = parts[1];
+                    string data = string.Join("|", parts, 2, parts.Length - 2);
+                    string from = NetworkManager.RemoteSceneName; // best we have without a per-packet from field
+                    ItemSyncMod.ItemSyncMod.Connection.Dispatch(label, data, from);
+                }
                 else if (header == "SHADE_STATE" && parts.Length >= 6)
                 {
                     string scene = parts[1];
