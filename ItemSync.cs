@@ -57,7 +57,19 @@ namespace BetterMultiplayer
             "fireballLevel", "quakeLevel", "screamLevel",
             "nailSmithUpgrades",
             "maxHealth", "maxHealthBase",
-            "health", "healthBlue",
+            // NOTE: "health" and "healthBlue" are INTENTIONALLY
+            // excluded from the whitelist. Health is a per-player
+            // runtime value (current HP / soul), not a permanent
+            // ability flag. Syncing it between players caused
+            // "when the other player heals, I fully heal" — player
+            // A heals, health goes 3→5, ItemSync sends 5 to player
+            // B, player B's PlayerData.health gets set to 5.
+            //
+            // Health display for the REMOTE player is handled
+            // separately by the POS packet (PacketHandler stores
+            // RemoteHealth/RemoteMaxHealth/RemoteHealthBlue for
+            // HUD rendering). That's the only place health should
+            // travel over the network.
             "heartPieces",
             "vesselFragments", "MPReserveMax", "MPReserve",
             "simpleKeys",

@@ -26,6 +26,20 @@ namespace BetterMultiplayer
 
                 if (localSprite != null)
                 {
+                    // CRITICAL: add the RemotePlayerPuppet marker
+                    // component FIRST so that tk2dSprite.Awake
+                    // (which fires immediately on AddComponent
+                    // below) can see it via
+                    // __instance.GetComponent<RemotePlayerPuppet>().
+                    // Without this, the tk2dSprite_Awake_Patch
+                    // Postfix doesn't recognize the puppet as a
+                    // remote player and falls back to the collection's
+                    // shared material (which has been set to the LOCAL
+                    // skin by ApplySharedMaterialSkins), so the
+                    // remote player appears wearing the local
+                    // player's skin.
+                    puppet.AddComponent<RemotePlayerPuppet>().username = name;
+
                     tk2dSprite.AddComponent(puppet, localSprite.Collection, localSprite.spriteId);
                 }
 
@@ -93,8 +107,11 @@ namespace BetterMultiplayer
                     }
                 }
 
-                // Attach our remote puppet controller
-                var puppetCtrl = puppet.AddComponent<RemotePlayerPuppet>();
+                // Attach our remote puppet controller fields
+                // (the marker component was already added above
+                // BEFORE the tk2dSprite so the Awake Postfix could
+                // see it).
+                var puppetCtrl = puppet.GetComponent<RemotePlayerPuppet>();
                 puppetCtrl.username = name;
                 puppetCtrl.animator = puppet.GetComponent<tk2dSpriteAnimator>();
                 puppetCtrl.sprite = puppet.GetComponent<tk2dSprite>();
@@ -181,6 +198,19 @@ namespace BetterMultiplayer
             }
         }
 
+        // The spell prefab lookup in the DLL only exposes
+        // `spell1Prefab` (for Vengeful Spirit / Shade Soul — both
+        // reuse the same variable). There are no
+        // `Fireball Prefab` / `Quake Prefab` / `Scream Prefab` /
+        // `Fireball 2 Prefab` / etc. variables in the game's
+        // serialized FSM data. We search ALL PlayMaker FSMs on
+        // the hero (not just "Spell Control") and fall back to
+        // "spell1Prefab" so at least Vengeful Spirit / Shade Soul
+        // get a visual on the remote puppet. For Howling Wraiths,
+        // Descending Dark, Abyss Shriek — and for correct
+        // projectile movement, not just a static visual — the
+        // SpellReplicator module hooks ObjectPoolExtensions.Spawn
+        // and replicates the actual pooled projectile.
         private static GameObject GetSpellPrefab(string fsmVariableName)
         {
             if (HeroController.instance == null) return null;
@@ -188,10 +218,20 @@ namespace BetterMultiplayer
             {
                 foreach (var fsm in HeroController.instance.GetComponents<PlayMakerFSM>())
                 {
-                    if (fsm.FsmName == "Spell Control")
+                    var variable = fsm.FsmVariables.GetFsmGameObject(fsmVariableName);
+                    if (variable != null && variable.Value != null)
                     {
-                        var variable = fsm.FsmVariables.GetFsmGameObject(fsmVariableName);
-                        if (variable != null)
+                        return variable.Value;
+                    }
+                }
+                // Fallback: try spell1Prefab if the requested
+                // name wasn't found (most spells end up here).
+                if (fsmVariableName != "spell1Prefab")
+                {
+                    foreach (var fsm in HeroController.instance.GetComponents<PlayMakerFSM>())
+                    {
+                        var variable = fsm.FsmVariables.GetFsmGameObject("spell1Prefab");
+                        if (variable != null && variable.Value != null)
                         {
                             return variable.Value;
                         }
@@ -280,6 +320,10 @@ namespace BetterMultiplayer
                 else if (newClip.Contains("spell1") || newClip.Contains("fireball"))
                 {
                     bool upgraded = newClip.Contains("2") || newClip.Contains("upgraded") || newClip.Contains("void") || newClip.Contains("shadesoul");
+                    // Both Vengeful Spirit and Shade Soul use the
+                    // same spell1Prefab. GetSpellPrefab falls back
+                    // to it automatically if the requested name
+                    // doesn't exist.
                     GameObject prefab = upgraded ? GetSpellPrefab("Fireball 2 Prefab") : GetSpellPrefab("Fireball Prefab");
                     if (prefab == null) prefab = GetSpellPrefab("Fireball Prefab") ?? GetSpellPrefab("Fireball 2 Prefab");
 
