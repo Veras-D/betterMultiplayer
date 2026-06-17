@@ -150,6 +150,32 @@ namespace BetterMultiplayer
 
             // === CORNIFER (the map-maker NPC) ===
             "cornifer", "corniferAtHome", "corniferIntroduced",
+
+            // === RANCID EGGS + GRIMM TROUPE / NIGHTMARE LANTERNS ===
+            // The user said "I think an item named egg or something
+            // like that is not being synced." The most likely
+            // candidates: Rancid Eggs (the consumable that gives
+            // geo), the Grimmchild level (the Grimm Troupe's
+            // familiar), and the Nightmare Lantern collection
+            // (Grimm Troupe lanterns lit).
+            "rancidEggs",
+            "grimmChildLevel", "grimmchildLevel1", "grimmchildLevel2",
+            "grimmchildLevel3", "grimmchildLevel4",
+            "grimmchildAwoken", "defeatedNightmareGrimm",
+            "killedNightmareGrimm", "killsNightmareGrimm",
+            "newDataNightmareGrimm", "destroyedNightmareLantern",
+            "nightmareLanternAppeared", "nightmareLanternLit",
+            "eggTempleVisited", "elderbugSpeechEggTemple",
+
+            // === SALUBRA'S BLESSINGS / NOTCHES ===
+            // The four Salubra blessings that unlock charm
+            // notches. Without these, the second player has the
+            // wrong number of charm notches and can't equip
+            // certain charm builds.
+            "salubraBlessing",
+            "salubraNotch1", "salubraNotch2",
+            "salubraNotch3", "salubraNotch4",
+            "salubraConvoCombo", "salubraConvoOvercharm", "salubraConvoTruth",
         };
 
         public static void Initialize()
