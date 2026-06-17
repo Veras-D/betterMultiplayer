@@ -248,18 +248,33 @@ namespace BetterMultiplayer
             {
                 if (HeroController.instance == null) return;
 
-                // Trigger/stop focus effects
+                // Helper: case-insensitive substring check.
+                // Hollow Knight's animation clip names are
+                // capitalized ("Focus", "Fireball 1", "Dash",
+                // "Attack", "Double Jump", "Focus Heal") but the
+                // C# Contains / StartsWith / == operators are
+                // case-sensitive by default. Every comparison
+                // here MUST be case-insensitive or the effect
+                // never triggers.
+                bool Has(string clip, string needle) =>
+                    clip != null && clip.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
+                bool Is(string clip, string name) =>
+                    clip != null && string.Equals(clip, name, StringComparison.OrdinalIgnoreCase);
+                bool Starts(string clip, string needle) =>
+                    clip != null && clip.StartsWith(needle, StringComparison.OrdinalIgnoreCase);
+
+                // Trigger/stop focus effects (healing)
                 var focusEffects = transform.Find("Focus Effects");
                 if (focusEffects != null)
                 {
-                    if (newClip.Contains("focus") || newClip.Contains("heal"))
+                    if (Has(newClip, "focus") || Has(newClip, "heal"))
                     {
                         foreach (var ps in focusEffects.GetComponentsInChildren<ParticleSystem>(true))
                         {
                             ps.Play();
                         }
                     }
-                    else if (oldClip.Contains("focus") || oldClip.Contains("heal"))
+                    else if (Has(oldClip, "focus") || Has(oldClip, "heal"))
                     {
                         foreach (var ps in focusEffects.GetComponentsInChildren<ParticleSystem>(true))
                         {
@@ -268,14 +283,14 @@ namespace BetterMultiplayer
                     }
                 }
 
-                if (newClip.StartsWith("attack") || newClip.Contains("slash"))
+                if (Starts(newClip, "attack") || Has(newClip, "slash"))
                 {
                     GameObject prefab = null;
-                    if (newClip.Contains("up"))
+                    if (Has(newClip, "up"))
                     {
                         prefab = GetHeroField("upSlashPrefab");
                     }
-                    else if (newClip.Contains("down"))
+                    else if (Has(newClip, "down"))
                     {
                         prefab = GetHeroField("downSlashPrefab");
                     }
@@ -293,7 +308,7 @@ namespace BetterMultiplayer
                         Destroy(slash, 0.3f);
                     }
                 }
-                else if (newClip == "dash")
+                else if (Is(newClip, "dash"))
                 {
                     GameObject prefab = GetHeroField("dashParticlesPrefab");
                     if (prefab != null)
@@ -305,8 +320,13 @@ namespace BetterMultiplayer
                         Destroy(dash, 0.5f);
                     }
                 }
-                else if (newClip.Contains("double_jump") || newClip.Contains("d_jump"))
+                else if (Has(newClip, "double jump") || Has(newClip, "doublejump") || Has(newClip, "d_jump"))
                 {
+                    // Animation name is "Double Jump" (with
+                    // space) or "DoubleJump" (no space) — both
+                    // checked. Also keep the old "double_jump"
+                    // form as a fallback just in case some
+                    // animation library variant uses underscores.
                     GameObject prefab = GetHeroField("dJumpWingsPrefab");
                     if (prefab != null)
                     {
@@ -317,9 +337,13 @@ namespace BetterMultiplayer
                         Destroy(wings, 0.6f);
                     }
                 }
-                else if (newClip.Contains("spell1") || newClip.Contains("fireball"))
+                else if (Has(newClip, "fireball") || Has(newClip, "spell1"))
                 {
-                    bool upgraded = newClip.Contains("2") || newClip.Contains("upgraded") || newClip.Contains("void") || newClip.Contains("shadesoul");
+                    // Check for upgraded (Shade Soul) by looking
+                    // for "2" in the clip name ("Fireball 2").
+                    // Case-insensitive so "fireball 2" and
+                    // "Fireball 2" both match.
+                    bool upgraded = Has(newClip, "2") || Has(newClip, "upgraded") || Has(newClip, "void") || Has(newClip, "shadesoul");
                     // Both Vengeful Spirit and Shade Soul use the
                     // same spell1Prefab. GetSpellPrefab falls back
                     // to it automatically if the requested name
@@ -336,9 +360,9 @@ namespace BetterMultiplayer
                         Destroy(spell, 1.5f);
                     }
                 }
-                else if (newClip.Contains("spell2") || newClip.Contains("quake") || newClip.Contains("dive"))
+                else if (Has(newClip, "quake") || Has(newClip, "dive") || Has(newClip, "spell2"))
                 {
-                    bool upgraded = newClip.Contains("2") || newClip.Contains("upgraded") || newClip.Contains("void") || newClip.Contains("dark");
+                    bool upgraded = Has(newClip, "2") || Has(newClip, "upgraded") || Has(newClip, "void") || Has(newClip, "dark");
                     GameObject prefab = upgraded ? GetSpellPrefab("Quake 2 Prefab") : GetSpellPrefab("Quake Prefab");
                     if (prefab == null) prefab = GetSpellPrefab("Quake Prefab") ?? GetSpellPrefab("Quake 2 Prefab");
 
@@ -351,9 +375,9 @@ namespace BetterMultiplayer
                         Destroy(spell, 1.5f);
                     }
                 }
-                else if (newClip.Contains("spell4") || newClip.Contains("scream") || newClip.Contains("shriek"))
+                else if (Has(newClip, "scream") || Has(newClip, "shriek") || Has(newClip, "spell4"))
                 {
-                    bool upgraded = newClip.Contains("2") || newClip.Contains("upgraded") || newClip.Contains("void") || newClip.Contains("shriek");
+                    bool upgraded = Has(newClip, "2") || Has(newClip, "upgraded") || Has(newClip, "void") || Has(newClip, "shriek");
                     GameObject prefab = upgraded ? GetSpellPrefab("Scream 2 Prefab") : GetSpellPrefab("Scream Prefab");
                     if (prefab == null) prefab = GetSpellPrefab("Scream Prefab") ?? GetSpellPrefab("Scream 2 Prefab");
 
