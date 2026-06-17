@@ -11,6 +11,17 @@ namespace BetterMultiplayer
         public static string SelectedSkin { get; private set; } = "Default";
         public static string RemoteSelectedSkin { get; private set; } = "Default";
         public static Texture2D LocalSkinTexture { get; private set; }
+        // The vanilla Hollow Knight knight atlas (atlas0). Saved
+        // the first time ApplySharedMaterialSkins sees the
+        // knight's collection material, BEFORE we overwrite the
+        // mainTexture with the local skin. Used to give the
+        // remote puppet a unique material instance with the
+        // vanilla atlas when the remote player is using the
+        // default character (no skin selected → RemoteSkinTexture
+        // is null). Without this, the puppet falls back to the
+        // collection's material, which has been set to the
+        // LOCAL skin, so the puppet shows the wrong skin.
+        public static Texture2D VanillaKnightTexture { get; private set; }
         public static Texture2D RemoteSkinTexture { get; private set; }
         public static Texture2D LocalCloakTexture { get; private set; }
         public static Texture2D LocalHUDTexture { get; private set; }
@@ -1605,6 +1616,19 @@ namespace BetterMultiplayer
                             var mat = clip.frames[0].spriteCollection.spriteDefinitions[0].material;
                             if (mat != null)
                             {
+                                // Save the vanilla knight atlas the
+                                // FIRST time we see it — before we
+                                // overwrite mainTexture with the
+                                // local skin below. The remote
+                                // puppet uses this when the remote
+                                // player is using the default
+                                // character (no skin selected →
+                                // RemoteSkinTexture is null).
+                                if (VanillaKnightTexture == null && mat.mainTexture != null)
+                                {
+                                    VanillaKnightTexture = mat.mainTexture as Texture2D;
+                                }
+
                                 if (mat.mainTexture != t.tex)
                                 {
                                     mat.mainTexture = t.tex;
@@ -2380,17 +2404,28 @@ namespace BetterMultiplayer
                     // Check if it is remote puppet main sprite
                     else if (__instance.GetComponent<RemotePlayerPuppet>() != null)
                     {
-                        if (SkinManager.RemoteSkinTexture != null)
+                        // Always create a unique material instance
+                        // for the remote puppet. If the remote player
+                        // has a skin, use it. If they're using the
+                        // default character (no skin), fall back to
+                        // the vanilla knight atlas — otherwise the
+                        // puppet would show the LOCAL skin via the
+                        // collection's shared material.
+                        Texture2D remoteTex = SkinManager.RemoteSkinTexture;
+                        if (remoteTex == null) remoteTex = SkinManager.VanillaKnightTexture;
+                        if (remoteTex != null)
                         {
-                            ApplyTexture(__instance, SkinManager.RemoteSkinTexture);
+                            ApplyTexture(__instance, remoteTex);
                         }
                     }
                     // Check if it is remote puppet cloak
                     else if (name == "Cloak" && __instance.transform.parent != null && __instance.transform.parent.GetComponent<RemotePlayerPuppet>() != null)
                     {
-                        if (SkinManager.RemoteCloakTexture != null)
+                        Texture2D remoteCloakTex = SkinManager.RemoteCloakTexture;
+                        if (remoteCloakTex == null) remoteCloakTex = SkinManager.VanillaKnightTexture;
+                        if (remoteCloakTex != null)
                         {
-                            ApplyTexture(__instance, SkinManager.RemoteCloakTexture);
+                            ApplyTexture(__instance, remoteCloakTex);
                         }
                     }
                     // Local effects — only Wings, Sprint, and Shade
