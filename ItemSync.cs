@@ -106,6 +106,50 @@ namespace BetterMultiplayer
             "gotMapRoyalGardens", "gotMapRestingGrounds",
             "gotMapKingdomsEdge", "gotMapHowlingCliffs",
             "gotMapAbyss", "gotMapWhitePalace", "gotMapColosseum",
+
+            // === TRINKETS (the small sellable items) ===
+            // The user said "pen" — most likely meant "trinket"
+            // (typo or autocorrect). The PlayerData bool flags
+            // for the four trinket types are trinket1..trinket4.
+            "trinket1", "trinket2", "trinket3", "trinket4",
+
+            // === MAP PINS (the placeable markers on the map) ===
+            // hasPin tracks whether the player has unlocked the
+            // pin item at all. hasPinBench/Stag/Tram/etc. track
+            // whether the player has DISCOVERED the specific
+            // pin type (Cornifer sells them). All 12 of them.
+            "hasPin",
+            "hasPinBench", "hasPinBlackEgg", "hasPinCocoon",
+            "hasPinDreamPlant", "hasPinGhost", "hasPinGrub",
+            "hasPinGuardian", "hasPinShop", "hasPinSpa",
+            "hasPinStag", "hasPinTram",
+
+            // === MAP AREA REVEALS ===
+            // The mapCity/mapCrossroads/etc. bools track which
+            // map areas have been VISUALLY REVEALED on the map
+            // UI. Without these, the other player sees a fully
+            // blacked-out map even though they explored the
+            // area in their own save.
+            "mapCrossroads", "mapGreenpath", "mapFungalWastes",
+            "mapCity", "mapDeepnest", "mapRoyalGardens",
+            "mapRestingGrounds", "mapCliffs", "mapAbyss",
+            "mapFogCanyon", "mapWaterways", "mapMines",
+            "mapDirtmouth", "mapKeyPref", "mapProjection",
+            "mapToPlane", "mapZoneBools", "mapAllRooms",
+            "mapOutskirts", "mapMarkersBlue", "mapMarkersRed",
+            "mapMarkersWhite", "mapMarkersYellow",
+
+            // === VISITED AREAS (needed for some FSMs / achievements) ===
+            "visitedDirtmouth", "visitedCrossroads", "visitedGreenpath",
+            "visitedFungus", "visitedCliffs", "visitedHive",
+            "visitedAbyss", "visitedAbyssLower", "visitedMines",
+            "visitedMines10", "visitedDeepnest", "visitedDeepnestSpa",
+            "visitedFogCanyon", "visitedOutskirts", "visitedRestingGrounds",
+            "visitedRoyalGardens", "visitedGodhome",
+            "visitedCrossroadsInfected", "visitedBool",
+
+            // === CORNIFER (the map-maker NPC) ===
+            "cornifer", "corniferAtHome", "corniferIntroduced",
         };
 
         public static void Initialize()
